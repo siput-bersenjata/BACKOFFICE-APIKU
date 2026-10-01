@@ -1,5 +1,5 @@
 /**
- * Local Development Server
+ * Local & Serverless Server
  * Serves static assets from public/ and routes API calls to api/ handlers.
  */
 
@@ -11,12 +11,11 @@ const url = require('url');
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-// MIME types for static files
 const MIME_TYPES = {
-  '.html': 'text/html',
-  '.css': 'text/css',
-  '.js': 'application/javascript',
-  '.json': 'application/json',
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -29,16 +28,16 @@ const dashboardHandler = require('./api/dashboard');
 const transactionsHandler = require('./api/transactions');
 const syncHandler = require('./api/sync');
 
-const server = http.createServer(async (req, res) => {
+async function handleRequest(req, res) {
   const parsedUrl = url.parse(req.url, true);
-  const pathname = parsedUrl.pathname;
+  let pathname = parsedUrl.pathname || '/';
 
-  // Augment req object with query and body helper
+  // Strip leading /public if rewritten
+  pathname = pathname.replace(/^\/public/, '');
   req.query = parsedUrl.query;
 
-  // Helper for JSON response
   res.json = (data) => {
-    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify(data));
   };
 
@@ -56,10 +55,9 @@ const server = http.createServer(async (req, res) => {
     return syncHandler(req, res);
   }
 
-  // Static file serving
+  // Static files in public/
   let filePath = path.join(PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname);
-  
-  // Security check: ensure path is within PUBLIC_DIR
+
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.statusCode = 403;
     return res.end('Forbidden');
@@ -67,7 +65,6 @@ const server = http.createServer(async (req, res) => {
 
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
-      // Fallback to index.html for SPA routing
       filePath = path.join(PUBLIC_DIR, 'index.html');
     }
 
@@ -80,14 +77,18 @@ const server = http.createServer(async (req, res) => {
         return res.end(`Error reading file: ${readErr.code}`);
       }
       res.writeHead(200, { 'Content-Type': contentType });
-      res.end(content, 'utf-8');
+      res.end(content);
     });
   });
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(` Olsera Dashboard Running: http://localhost:${PORT}`);
-  console.log(` Auto-sync with Olsera Backoffice: ACTIVE`);
-  console.log(`=======================================================`);
-});
+const server = http.createServer(handleRequest);
+
+if (process.env.NODE_ENV !== 'production' || require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+  });
+}
+
+// Export for serverless environments
+module.exports = handleRequest;
