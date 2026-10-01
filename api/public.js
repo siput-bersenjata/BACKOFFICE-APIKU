@@ -14,7 +14,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // 1. Strict constraint: ONLY TODAY'S DATE
+    // 1. Strict constraint: ONLY TODAY'S DATE (WIB)
     const todayStr = formatDate(new Date());
 
     // 2. Determine percentage: Query param or saved database config

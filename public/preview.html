@@ -165,7 +165,21 @@
             document.getElementById('percentageBadge').innerText = percentage + '%';
 
             try {
-                const res = await fetch('/api/public?percentage=' + percentage);
+                const headers = {};
+                const activeAccountStr = localStorage.getItem('olsera_account');
+                if (activeAccountStr) {
+                    try {
+                        const activeAccount = JSON.parse(activeAccountStr);
+                        if (activeAccount.isCustom) {
+                            if (activeAccount.username) headers['x-olsera-username'] = activeAccount.username;
+                            if (activeAccount.password) headers['x-olsera-password'] = activeAccount.password;
+                            if (activeAccount.store) headers['x-olsera-store'] = activeAccount.store;
+                            if (activeAccount.token) headers['x-olsera-token'] = activeAccount.token;
+                        }
+                    } catch(e) {}
+                }
+
+                const res = await fetch('/api/public?percentage=' + percentage, { headers });
                 const json = await res.json();
 
                 if (json.status === 'success') {
