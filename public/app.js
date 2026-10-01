@@ -468,7 +468,7 @@ async function triggerManualSync() {
  */
 async function fetchDashboardData(isBackground = false) {
     const refreshIcon = document.getElementById('refreshIcon');
-    if (!isBackground) {
+    if (refreshIcon && !isBackground) {
         refreshIcon.classList.add('spin-refresh');
     }
 
@@ -478,20 +478,29 @@ async function fetchDashboardData(isBackground = false) {
         });
 
         if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
+            const errData = await res.json().catch(() => null);
+            throw new Error(errData?.message || `HTTP ${res.status}`);
         }
         const data = await res.json();
+        if (data.status === 'error') {
+            throw new Error(data.message || 'Gagal memuat data dari Olsera');
+        }
         dashboardData = data;
         applyDashboardData(data);
     } catch (error) {
         console.error('Fetch error:', error);
-        document.getElementById('lastUpdatedText').innerText = 'Gagal sinkron (Periksa koneksi atau akun)';
+        const lastUpdatedEl = document.getElementById('lastUpdatedText');
+        if (lastUpdatedEl) {
+            lastUpdatedEl.innerText = `Gagal sinkron: ${error.message}`;
+            lastUpdatedEl.className = 'text-rose-500 text-xs font-semibold inline';
+        }
     } finally {
-        if (!isBackground) {
+        if (refreshIcon && !isBackground) {
             refreshIcon.classList.remove('spin-refresh');
         }
     }
 }
+
 
 /**
  * Apply fetched data to UI and charts
@@ -1172,6 +1181,19 @@ function setupCopyUrlButton() {
         });
     }
 }
+
+/**
+ * Setup Filter Preview navigation controls
+ */
+function setupFilterPreviewControls() {
+    const previewBtn = document.getElementById('openPreviewPageBtn');
+    if (previewBtn) {
+        previewBtn.addEventListener('click', () => {
+            updatePublicApiUrl();
+        });
+    }
+}
+
 
 /**
  * Save chosen percentage as default in database

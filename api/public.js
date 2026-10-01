@@ -30,28 +30,41 @@ module.exports = async (req, res) => {
 
     const authContext = extractAuthContext(req);
 
-    // 3. Fetch today's transactions (fetch up to 200 items for today)
+    // 3. Fetch today's transactions (fetch up to 500 items for today across pages)
     const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
     let allTx = page1.data || [];
 
-    // If more than 100 items exist, fetch second page
+    // If more than 100 items exist, fetch subsequent pages in parallel
     if (page1.meta && page1.meta.last_page > 1) {
       try {
-        const page2 = await getSalesDetails(todayStr, todayStr, 2, 100, authContext);
-        if (page2.data) allTx = allTx.concat(page2.data);
-      } catch (e) {}
+        const remainingPages = [];
+        for (let p = 2; p <= Math.min(page1.meta.last_page, 5); p++) {
+          remainingPages.push(getSalesDetails(todayStr, todayStr, p, 100, authContext));
+        }
+        const results = await Promise.all(remainingPages);
+        results.forEach(res => {
+          if (res && res.data && Array.isArray(res.data)) {
+            allTx = allTx.concat(res.data);
+          }
+        });
+      } catch (e) {
+        console.warn('[Public API] Error fetching additional pages:', e.message);
+      }
     }
 
     const totalReal = allTx.length;
 
     // 4. Filter by percentage
     // Calculate how many transactions to include
-    const targetCount = Math.max(1, Math.min(totalReal, Math.round(totalReal * (percentage / 100))));
+    const targetCount = totalReal === 0 ? 0 : Math.max(1, Math.min(totalReal, Math.round(totalReal * (percentage / 100))));
 
     let filtered = [];
-    if (targetCount >= totalReal) {
+    if (totalReal === 0 || targetCount === 0) {
+      filtered = [];
+    } else if (targetCount >= totalReal) {
       filtered = [...allTx];
     } else {
+
       // Sample evenly across the array so it reflects the entire day
       const step = totalReal / targetCount;
       const selectedIndices = new Set();
