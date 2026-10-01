@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Olsera - Live Transaction Monitor</title>
+    <link rel="icon" type="image/png" href="https://dashboard.olsera.co.id/static/favicon/favicon-32x32.png">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(1.15); }
+        }
+        .pulse-live {
+            animation: pulse-dot 2s infinite ease-in-out;
+        }
+        .spin-refresh {
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen flex overflow-hidden">
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="mobileBackdrop" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 hidden md:hidden"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col h-full shadow-sm z-40 fixed md:static inset-y-0 left-0 transition-transform">
+        <!-- Logo & Store -->
+        <div class="h-20 flex flex-col justify-center px-6 border-b border-slate-100">
+            <div class="flex items-center gap-2.5 text-indigo-600 font-bold text-xl tracking-tight">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-sm shadow-indigo-200">
+                    <i data-lucide="store" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <span>Kasir<span class="text-slate-800">Pro</span></span>
+                    <span class="text-[10px] block font-semibold uppercase tracking-wider text-indigo-500">Olsera Sync</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-1.5 mt-1">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span id="storeNameText" class="text-xs font-medium text-slate-500 truncate">Naiki Cafe</span>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto py-5 px-3 space-y-1">
+            <a href="#" class="flex items-center gap-3 px-3 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-medium transition-colors">
+                <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                Dashboard Realtime
+            </a>
+            <a href="#tableSection" class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors">
+                <i data-lucide="receipt" class="w-5 h-5"></i>
+                Transaksi Live
+                <span id="navTxBadge" class="ml-auto text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">0</span>
+            </a>
+            <a href="#chartsSection" class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors">
+                <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                Laporan & Grafik
+            </a>
+            <a href="https://dashboard.olsera.co.id/login" target="_blank" class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors">
+                <i data-lucide="external-link" class="w-5 h-5"></i>
+                Olsera Backoffice
+            </a>
+        </nav>
+
+        <!-- System Status & Store Badge -->
+        <div class="p-4 border-t border-slate-100">
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-100 text-xs mb-3">
+                <div class="flex items-center justify-between font-semibold text-slate-700 mb-1">
+                    <span>Koneksi Olsera</span>
+                    <span class="inline-flex items-center text-emerald-600">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 pulse-live"></span>
+                        Terhubung
+                    </span>
+                </div>
+                <p class="text-slate-500 text-[11px]">Role: <span id="userRoleBadge" class="font-medium text-slate-700">Perpajakan (PJ)</span></p>
+                <p class="text-slate-500 text-[11px] truncate">Akun: bapendapedua@gmail.com</p>
+            </div>
+            <div class="text-[11px] text-center text-slate-400">
+                Dashboard API Olsera &bull; v1.0.0
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
+        
+        <!-- Header -->
+        <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 z-10 sticky top-0">
+            <!-- Mobile Menu Button & Search -->
+            <div class="flex items-center gap-3 sm:gap-4 flex-1">
+                <button id="mobileMenuBtn" class="md:hidden text-slate-500 hover:text-slate-700 p-1.5 rounded-lg border border-slate-200">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
+                </button>
+                
+                <div class="relative w-full max-w-xs sm:max-w-md">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
+                    </div>
+                    <input id="searchInput" type="text" placeholder="Cari ID transaksi atau metode bayar..." class="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs sm:text-sm transition-all duration-200">
+                </div>
+            </div>
+
+            <!-- Sync Control & Profile -->
+            <div class="flex items-center gap-2 sm:gap-4 ml-2">
+                <!-- Live Pulse Pill -->
+                <div class="hidden lg:flex items-center gap-2 px-2.5 py-1 bg-emerald-50 border border-emerald-200/60 rounded-full text-xs font-semibold text-emerald-700">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 pulse-live"></span>
+                    <span>LIVE SYNC</span>
+                </div>
+
+                <!-- Auto Refresh Selector -->
+                <div class="hidden sm:flex items-center gap-1.5 text-xs text-slate-500">
+                    <i data-lucide="clock" class="w-3.5 h-3.5 text-slate-400"></i>
+                    <select id="autoRefreshInterval" class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                        <option value="15000">15 Detik</option>
+                        <option value="30000" selected>30 Detik</option>
+                        <option value="60000">1 Menit</option>
+                        <option value="0">Manual</option>
+                    </select>
+                </div>
+
+                <!-- Manual Refresh Button -->
+                <button id="refreshBtn" title="Sinkronkan data dengan Olsera Backoffice sekarang" class="p-2 sm:px-3 sm:py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 active:scale-95">
+                    <i id="refreshIcon" data-lucide="refresh-cw" class="w-4 h-4 text-slate-600"></i>
+                    <span class="hidden sm:inline">Sinkronkan</span>
+                </button>
+                
+                <div class="h-6 w-px bg-slate-200 hidden sm:block"></div>
+                
+                <!-- Profile Indicator -->
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-sm shadow-indigo-200 border border-indigo-700">
+                        BP
+                    </div>
+                    <div class="hidden md:block text-left">
+                        <p class="text-xs font-bold text-slate-800 leading-tight">Bapenda Admin</p>
+                        <p class="text-[11px] text-slate-500">Naiki Cafe</p>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Scrollable Area -->
+        <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
+            
+            <!-- Page Title Bar -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-xl sm:text-2xl font-bold text-slate-900">Dashboard Transaksi Olsera</h1>
+                        <span id="outletBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-semibold">Naiki Cafe</span>
+                    </div>
+                    <p class="text-xs sm:text-sm text-slate-500 mt-1 flex items-center gap-2">
+                        <span>Pantau performa transaksi kasir & pajak PB1 secara realtime dari Olsera.</span>
+                        <span class="text-slate-300 hidden sm:inline">&bull;</span>
+                        <span id="lastUpdatedText" class="text-slate-400 text-xs hidden sm:inline">Memuat...</span>
+                    </p>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <div class="flex bg-white border border-slate-200 rounded-lg p-0.5 text-xs font-medium shadow-sm">
+                        <button id="filterTodayBtn" class="px-3 py-1.5 bg-indigo-600 text-white rounded-md shadow-sm transition-all">Hari Ini</button>
+                        <button id="filterYesterdayBtn" class="px-3 py-1.5 text-slate-600 hover:text-slate-900 rounded-md transition-all">Kemarin</button>
+                        <input id="datePicker" type="date" class="px-2 py-1 bg-transparent text-slate-600 text-xs border-0 focus:outline-none cursor-pointer">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                <!-- Card 1: Total Pendapatan -->
+                <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <i data-lucide="banknote" class="w-16 h-16 text-indigo-600"></i>
+                    </div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="p-2.5 bg-indigo-50 rounded-xl text-indigo-600">
+                            <i data-lucide="wallet" class="w-5 h-5"></i>
+                        </div>
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Pendapatan</h3>
+                    </div>
+                    <p id="kpiRevenue" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">Rp 0</p>
+                    <div class="flex items-center gap-1.5 text-xs">
+                        <span id="revenueGrowthBadge" class="flex items-center text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md">
+                            <i data-lucide="trending-up" class="w-3.5 h-3.5 mr-1"></i> +0%
+                        </span>
+                        <span class="text-slate-400">vs kemarin</span>
+                    </div>
+                </div>
+
+                <!-- Card 2: Total Transaksi -->
+                <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <i data-lucide="shopping-bag" class="w-16 h-16 text-sky-600"></i>
+                    </div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="p-2.5 bg-sky-50 rounded-xl text-sky-600">
+                            <i data-lucide="shopping-cart" class="w-5 h-5"></i>
+                        </div>
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Transaksi</h3>
+                    </div>
+                    <p id="kpiTransactions" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">0</p>
+                    <div class="flex items-center gap-1.5 text-xs">
+                        <span class="flex items-center text-sky-600 font-semibold bg-sky-50 px-2 py-0.5 rounded-md">
+                            <i data-lucide="check-circle" class="w-3.5 h-3.5 mr-1"></i> Terverifikasi Olsera
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Card 3: Rata-rata Penjualan -->
+                <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <i data-lucide="calculator" class="w-16 h-16 text-amber-600"></i>
+                    </div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="p-2.5 bg-amber-50 rounded-xl text-amber-600">
+                            <i data-lucide="bar-chart" class="w-5 h-5"></i>
+                        </div>
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Rata-rata Transaksi</h3>
+                    </div>
+                    <p id="kpiAvgSale" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">Rp 0</p>
+                    <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                        <span>Per struk penjualan</span>
+                    </div>
+                </div>
+
+                <!-- Card 4: Pajak Daerah PB1 10% -->
+                <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <i data-lucide="receipt" class="w-16 h-16 text-rose-600"></i>
+                    </div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="p-2.5 bg-rose-50 rounded-xl text-rose-600">
+                            <i data-lucide="file-text" class="w-5 h-5"></i>
+                        </div>
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Pajak PB1 (10%)</h3>
+                    </div>
+                    <p id="kpiTax" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">Rp 0</p>
+                    <div class="flex items-center gap-1.5 text-xs">
+                        <span class="flex items-center text-rose-600 font-semibold bg-rose-50 px-2 py-0.5 rounded-md">
+                            <i data-lucide="shield-check" class="w-3.5 h-3.5 mr-1"></i> Bapenda Monitor
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div id="chartsSection" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Revenue Line Chart (2 Cols) -->
+                <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm lg:col-span-2">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-base sm:text-lg">Tren Pendapatan (7 Hari Terakhir)</h3>
+                            <p class="text-xs text-slate-400">Pergerakan omzet harian yang tercatat di sistem Olsera</p>
+                        </div>
+                        <div class="p-1 text-slate-400">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700">7 Hari</span>
+                        </div>
+                    </div>
+                    <div class="relative h-64 sm:h-72 w-full">
+                        <canvas id="revenueChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Payment Methods Donut / Bar Chart (1 Col) -->
+                <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-base sm:text-lg">Metode Pembayaran</h3>
+                            <p class="text-xs text-slate-400">Distribusi QRIS, Cash & Kartu</p>
+                        </div>
+                        <div class="p-1 text-slate-400">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700">Hari Ini</span>
+                        </div>
+                    </div>
+                    <div class="relative h-64 sm:h-72 w-full flex items-center justify-center">
+                        <canvas id="paymentChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Transactions Table Section -->
+            <div id="tableSection" class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-bold text-slate-800 text-base sm:text-lg">Transaksi Terbaru</h3>
+                        <span id="tableCountBadge" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">0 Data</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="downloadCsvBtn" class="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 flex items-center gap-1.5 transition-colors">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i> Ekspor CSV
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold">
+                                <th class="p-4">No. Order / ID</th>
+                                <th class="p-4">Waktu (WIB)</th>
+                                <th class="p-4">Metode Bayar</th>
+                                <th class="p-4">Subtotal</th>
+                                <th class="p-4">Pajak (10%)</th>
+                                <th class="p-4 font-bold text-slate-700">Total Bayar</th>
+                                <th class="p-4">Status</th>
+                                <th class="p-4 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactionsTableBody" class="text-sm text-slate-700 divide-y divide-slate-100">
+                            <!-- Populated dynamically -->
+                            <tr>
+                                <td colspan="8" class="p-8 text-center text-slate-400">
+                                    <div class="flex flex-col items-center justify-center gap-2">
+                                        <i data-lucide="loader-2" class="w-6 h-6 animate-spin text-indigo-600"></i>
+                                        <span>Menghubungi Olsera Backoffice...</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Table Footer / Pagination -->
+                <div class="p-4 bg-slate-50/50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-3">
+                    <span id="paginationInfo">Menampilkan data transaksi realtime</span>
+                    <div class="flex items-center gap-1">
+                        <button id="prevPageBtn" class="px-3 py-1 bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-50" disabled>Sebelumnya</button>
+                        <span id="pageIndicator" class="px-2 font-semibold">Halaman 1</span>
+                        <button id="nextPageBtn" class="px-3 py-1 bg-white border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-50">Berikutnya</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Transaction Detail Modal -->
+    <div id="detailModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                        <i data-lucide="receipt" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-slate-800 text-sm">Detail Transaksi</h4>
+                        <p id="modalOrderNo" class="text-xs text-indigo-600 font-mono font-medium">#---</p>
+                    </div>
+                </div>
+                <button id="closeModalBtn" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div id="modalBody" class="p-5 space-y-3 text-sm">
+                <!-- Populated dynamically -->
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <button id="closeModalBtn2" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-colors">
+                    Tutup
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script src="app.js"></script>
+</body>
+</html>
