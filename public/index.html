@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Olsera - Live Transaction Monitor</title>
+    <title>Dashboard Olsera - Live Transaction & Public API Monitor</title>
     <link rel="icon" type="image/png" href="https://dashboard.olsera.co.id/static/favicon/favicon-32x32.png">
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -65,6 +65,10 @@
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
         }
+        /* Range slider styling */
+        input[type=range] {
+            accent-color: #4f46e5;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 h-screen flex overflow-hidden">
@@ -100,23 +104,34 @@
         </div>
 
         <!-- Navigation -->
-        <nav class="flex-1 overflow-y-auto py-5 px-3 space-y-1">
-            <a href="#" class="flex items-center gap-3 px-3 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-medium transition-colors">
+        <nav class="flex-1 overflow-y-auto py-5 px-3 space-y-1.5">
+            <button id="navDashboardBtn" class="w-full flex items-center gap-3 px-3 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-medium transition-colors text-left">
                 <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
-                Dashboard Realtime
-            </a>
-            <a href="#tableSection" class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors">
+                <span>Dashboard Realtime</span>
+            </button>
+            <button id="navTransactionsBtn" class="w-full flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors text-left">
                 <i data-lucide="receipt" class="w-5 h-5"></i>
-                Transaksi Live
+                <span>Transaksi Live</span>
                 <span id="navTxBadge" class="ml-auto text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">0</span>
-            </a>
-            <a href="#chartsSection" class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors">
+            </button>
+            <button id="navChartsBtn" class="w-full flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors text-left">
                 <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
-                Laporan & Grafik
-            </a>
+                <span>Laporan & Grafik</span>
+            </button>
+
+            <!-- FITUR BARU: API Publik & Database -->
+            <button id="navPublicApiBtn" class="w-full flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors text-left group">
+                <i data-lucide="database" class="w-5 h-5 text-indigo-500 group-hover:scale-110 transition-transform"></i>
+                <div class="flex-1">
+                    <span class="block leading-tight">API Publik & Database</span>
+                    <span class="text-[10px] text-slate-400 block font-normal">Filter & Sync 5 Jam</span>
+                </div>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">Baru</span>
+            </button>
+
             <a href="https://dashboard.olsera.co.id/login" target="_blank" class="flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors">
                 <i data-lucide="external-link" class="w-5 h-5"></i>
-                Olsera Backoffice
+                <span>Olsera Backoffice</span>
             </a>
         </nav>
 
@@ -134,7 +149,7 @@
                 <p id="activeUserEmail" class="text-slate-500 text-[11px] truncate">Akun: bapendapedua@gmail.com</p>
             </div>
             <div class="text-[11px] text-center text-slate-400">
-                Dashboard API Olsera &bull; v1.1.0
+                Dashboard API Olsera &bull; v1.2.0
             </div>
         </div>
     </aside>
@@ -199,8 +214,8 @@
             </div>
         </header>
 
-        <!-- Content Scrollable Area -->
-        <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
+        <!-- VIEW 1: Main Dashboard View -->
+        <div id="mainDashboardView" class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
             
             <!-- Page Title Bar -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -390,6 +405,214 @@
             </div>
 
         </div>
+
+        <!-- VIEW 2: HALAMAN TERSENDIRI UNTUK API PUBLIK & DATABASE (NEW FEATURE) -->
+        <div id="publicApiView" class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 hidden">
+            
+            <!-- Page Header -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-xl sm:text-2xl font-bold text-slate-900">API Publik & Manajemen Database</h1>
+                        <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">Khusus Hari Ini</span>
+                    </div>
+                    <p class="text-xs sm:text-sm text-slate-500 mt-1">
+                        Atur filter persentase data transaksi publik dan sinkronisasi otomatis ke Cloud Database setiap 5 jam.
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="manualDbSyncBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-indigo-200 flex items-center gap-2 active:scale-95">
+                        <i data-lucide="cloud-upload" class="w-4 h-4"></i>
+                        <span>Simpan Snapshot ke Database Sekarang</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Card 1: Pengaturan Filter Persentase API Publik -->
+            <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                            <i data-lucide="sliders" class="w-5 h-5 text-indigo-600"></i>
+                            Pengaturan Rasio Data Publik (Persentase)
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            Data yang ditampilkan ke publik via API <strong>hanya data transaksi hari ini</strong> dengan porsi persen yang Anda tentukan.
+                        </p>
+                    </div>
+                    <!-- Live Percentage Badge -->
+                    <div class="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-2xl border border-indigo-100 self-start sm:self-auto">
+                        <span class="text-xs font-medium text-slate-600">Rasio Terpilih:</span>
+                        <span id="sliderValueText" class="text-2xl font-extrabold text-indigo-600">50%</span>
+                    </div>
+                </div>
+
+                <!-- Slider Control -->
+                <div class="space-y-3 bg-slate-50/70 p-5 rounded-2xl border border-slate-100">
+                    <div class="flex justify-between text-xs font-semibold text-slate-600">
+                        <span>1% (Minimal)</span>
+                        <span>25%</span>
+                        <span>50% (Default)</span>
+                        <span>75%</span>
+                        <span>100% (Semua Data)</span>
+                    </div>
+                    <input id="percentageSlider" type="range" min="1" max="100" value="50" step="1" class="w-full h-2.5 bg-slate-200 rounded-lg cursor-pointer">
+                    
+                    <!-- Preset Pills -->
+                    <div class="flex items-center gap-2 pt-2 flex-wrap">
+                        <span class="text-xs text-slate-400 font-medium">Pilihan Cepat:</span>
+                        <button onclick="setSliderPreset(10)" class="px-2.5 py-1 text-xs font-semibold bg-white border border-slate-200 rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition-colors">10%</button>
+                        <button onclick="setSliderPreset(25)" class="px-2.5 py-1 text-xs font-semibold bg-white border border-slate-200 rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition-colors">25%</button>
+                        <button onclick="setSliderPreset(50)" class="px-2.5 py-1 text-xs font-semibold bg-white border border-slate-200 rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition-colors">50%</button>
+                        <button onclick="setSliderPreset(75)" class="px-2.5 py-1 text-xs font-semibold bg-white border border-slate-200 rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition-colors">75%</button>
+                        <button onclick="setSliderPreset(100)" class="px-2.5 py-1 text-xs font-semibold bg-white border border-slate-200 rounded-lg hover:border-indigo-400 hover:text-indigo-600 transition-colors">100% (Penuh)</button>
+                        
+                        <button id="saveDefaultPercentageBtn" class="ml-auto px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-200 transition-all active:scale-95 flex items-center gap-1.5">
+                            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                            <span>Simpan Sebagai Default Database</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Simulation Stats -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Riil Hari Ini</span>
+                        <p id="simTotalReal" class="text-xl font-bold text-slate-800 mt-1">0 Transaksi</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-indigo-600">Data Tampil di API Publik</span>
+                        <p id="simFilteredCount" class="text-xl font-bold text-indigo-600 mt-1">0 Transaksi</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Omzet API Publik</span>
+                        <p id="simFilteredRevenue" class="text-xl font-bold text-emerald-600 mt-1">Rp 0</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-rose-600">Pajak PB1 Terhitung</span>
+                        <p id="simFilteredTax" class="text-xl font-bold text-rose-600 mt-1">Rp 0</p>
+                    </div>
+                </div>
+
+                <!-- Public Endpoint Box -->
+                <div class="bg-slate-900 rounded-xl p-4 text-slate-100 space-y-3">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="text-slate-400 font-mono flex items-center gap-1.5">
+                            <i data-lucide="globe" class="w-3.5 h-3.5 text-indigo-400"></i>
+                            Tautan Endpoint API Publik (Bisa Diakses Siapa Saja Tanpa Login)
+                        </span>
+                        <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[11px]">GET /api/public</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 font-mono text-xs overflow-x-auto">
+                        <span id="publicApiUrlText" class="text-emerald-400 select-all truncate">https://backoffice-apiku.vercel.app/api/public</span>
+                    </div>
+                    <div class="flex items-center gap-2 pt-1">
+                        <button id="copyApiUrlBtn" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            <span id="copyBtnText">Salin Tautan API</span>
+                        </button>
+                        <a id="openApiUrlBtn" href="/api/public" target="_blank" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                            <span>Buka JSON di Tab Baru</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 2: Database Sync Status & Schedule Info -->
+            <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                            <i data-lucide="hard-drive" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-slate-900 text-base">Sinkronisasi Database Cloud (Per 5 Jam Sekali)</h4>
+                            <p class="text-xs text-slate-500">Tersinkron dengan <strong>Google Cloud Firestore</strong> (Project: <code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-600 font-mono">salshya</code>) & Cache Database Lokal.</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 pulse-live"></span>
+                            Auto-Sync: 5 Jam Sekali
+                        </span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 text-xs">
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                        <span class="text-slate-400 font-medium block">Database Engine</span>
+                        <span class="font-bold text-slate-800 text-sm mt-0.5 block">Google Cloud Firestore</span>
+                        <span class="text-[11px] text-slate-500">Collection: olsera_filtered_snapshots</span>
+                    </div>
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                        <span class="text-slate-400 font-medium block">Penyimpanan Terakhir</span>
+                        <span id="dbLastSyncText" class="font-bold text-slate-800 text-sm mt-0.5 block">Memuat...</span>
+                        <span class="text-[11px] text-slate-500">Snapshot tersimpan permanen</span>
+                    </div>
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                        <span class="text-slate-400 font-medium block">Jadwal Siklus Berikutnya</span>
+                        <span id="dbNextSyncText" class="font-bold text-emerald-600 text-sm mt-0.5 block">Otomatis / 5 Jam</span>
+                        <span class="text-[11px] text-slate-500">Auto background trigger</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 3: Riwayat Snapshot Database Tersimpan -->
+            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-bold text-slate-800 text-base sm:text-lg">Riwayat Snapshot Data Terfilter di Database</h3>
+                        <span id="snapshotCountBadge" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">0 Snapshot</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="downloadFilteredJsonBtn" class="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors">
+                            <i data-lucide="file-json" class="w-3.5 h-3.5 text-indigo-600"></i> Ekspor JSON
+                        </button>
+                        <button id="downloadFilteredCsvBtn" class="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors">
+                            <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-600"></i> Ekspor CSV
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Snapshot Selector Tabs if multiple -->
+                <div id="snapshotSelectorRow" class="px-5 py-3 bg-slate-50/60 border-b border-slate-100 flex items-center gap-2 overflow-x-auto text-xs">
+                    <span class="text-slate-400 shrink-0 font-medium">Pilih Snapshot:</span>
+                    <div id="snapshotPillsContainer" class="flex items-center gap-2">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Table of Filtered Transactions in Selected Snapshot -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold">
+                                <th class="p-4">No. Order</th>
+                                <th class="p-4">Waktu (WIB)</th>
+                                <th class="p-4">Metode Bayar</th>
+                                <th class="p-4">Subtotal</th>
+                                <th class="p-4">Pajak (10%)</th>
+                                <th class="p-4 font-bold text-slate-700">Total Bayar</th>
+                                <th class="p-4">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="filteredTableBody" class="text-sm text-slate-700 divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="7" class="p-8 text-center text-slate-400">
+                                    <div class="flex flex-col items-center justify-center gap-2">
+                                        <i data-lucide="loader-2" class="w-6 h-6 animate-spin text-indigo-600"></i>
+                                        <span>Memuat data dari database cloud...</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
     </main>
 
     <!-- Modal: Ganti Akun Olsera -->

@@ -1,6 +1,7 @@
 /**
  * Local & Serverless Server
  * Serves static assets from public/ and routes API calls to api/ handlers.
+ * Includes automated 5-hour background snapshot sync for local daemon.
  */
 
 const http = require('http');
@@ -28,12 +29,13 @@ const dashboardHandler = require('./api/dashboard');
 const transactionsHandler = require('./api/transactions');
 const syncHandler = require('./api/sync');
 const authHandler = require('./api/auth');
+const publicHandler = require('./api/public');
+const databaseHandler = require('./api/database');
 
 async function handleRequest(req, res) {
   const parsedUrl = url.parse(req.url, true);
   let pathname = parsedUrl.pathname || '/';
 
-  // Strip leading /public if rewritten
   pathname = pathname.replace(/^\/public/, '');
   req.query = parsedUrl.query;
 
@@ -56,6 +58,10 @@ async function handleRequest(req, res) {
     return syncHandler(req, res);
   } else if (pathname === '/api/auth') {
     return authHandler(req, res);
+  } else if (pathname === '/api/public') {
+    return publicHandler(req, res);
+  } else if (pathname === '/api/database') {
+    return databaseHandler(req, res);
   }
 
   // Static files in public/
@@ -87,11 +93,51 @@ async function handleRequest(req, res) {
 
 const server = http.createServer(handleRequest);
 
+// 5-Hour Background Scheduler for local server
+const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+function start5HourScheduler() {
+  setInterval(async () => {
+    console.log('[Scheduler] Running 5-hour scheduled database snapshot...');
+    try {
+      const { formatDate } = require('./lib/olsera');
+      const { getPublicConfig, saveSnapshot } = require('./lib/database');
+      const { getSalesDetails } = require('./lib/olsera');
+
+      const today = formatDate(new Date());
+      const config = await getPublicConfig();
+      const page1 = await getSalesDetails(today, today, 1, 100);
+      const allTx = page1.data || [];
+      const totalReal = allTx.length;
+      const targetCount = Math.max(1, Math.round(totalReal * (config.percentage / 100)));
+      const filtered = allTx.slice(0, targetCount);
+
+      let rev = 0, tax = 0;
+      filtered.forEach(t => {
+        rev += Number(t.paid_amount) || Number(t.subtotal) || 0;
+        tax += Number(t.tax) || 0;
+      });
+
+      await saveSnapshot({
+        date: today,
+        percentage: config.percentage,
+        total_real_transactions: totalReal,
+        saved_count: filtered.length,
+        total_revenue: rev,
+        total_tax: tax,
+        transactions: filtered
+      });
+      console.log('[Scheduler] 5-hour snapshot successfully saved to database!');
+    } catch (e) {
+      console.error('[Scheduler] Error running 5-hour snapshot:', e.message);
+    }
+  }, FIVE_HOURS_MS);
+}
+
 if (process.env.NODE_ENV !== 'production' || require.main === module) {
   server.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
+    start5HourScheduler();
   });
 }
 
-// Export for serverless environments
 module.exports = handleRequest;

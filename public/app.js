@@ -55,6 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initCharts();
     setupEventListeners();
     updateAccountUI();
+    updatePublicApiUrl();
+    calculateLiveSimulation();
     fetchDashboardData();
     setupAutoRefresh();
 });
@@ -347,6 +349,49 @@ function setupEventListeners() {
             fetchDashboardData();
         }
     });
+
+    // View Navigation Buttons
+    const navDashboardBtn = document.getElementById('navDashboardBtn');
+    if (navDashboardBtn) navDashboardBtn.addEventListener('click', () => switchView('dashboard'));
+
+    const navTransactionsBtn = document.getElementById('navTransactionsBtn');
+    if (navTransactionsBtn) navTransactionsBtn.addEventListener('click', () => switchView('transactions'));
+
+    const navChartsBtn = document.getElementById('navChartsBtn');
+    if (navChartsBtn) navChartsBtn.addEventListener('click', () => switchView('charts'));
+
+    const navPublicApiBtn = document.getElementById('navPublicApiBtn');
+    if (navPublicApiBtn) navPublicApiBtn.addEventListener('click', () => switchView('publicApi'));
+
+    // Public API Slider
+    const percentageSlider = document.getElementById('percentageSlider');
+    if (percentageSlider) {
+        percentageSlider.addEventListener('input', (e) => {
+            updateSliderUI(e.target.value);
+        });
+    }
+
+    // Save Default Percentage to Database
+    const saveDefaultBtn = document.getElementById('saveDefaultPercentageBtn');
+    if (saveDefaultBtn) {
+        saveDefaultBtn.addEventListener('click', saveDefaultPercentage);
+    }
+
+    // Manual Database Sync
+    const manualDbSyncBtn = document.getElementById('manualDbSyncBtn');
+    if (manualDbSyncBtn) {
+        manualDbSyncBtn.addEventListener('click', triggerDatabaseSyncNow);
+    }
+
+    // Copy API URL
+    setupCopyUrlButton();
+
+    // Export Filtered Snapshot buttons
+    const dlJsonBtn = document.getElementById('downloadFilteredJsonBtn');
+    if (dlJsonBtn) dlJsonBtn.addEventListener('click', exportFilteredJson);
+
+    const dlCsvBtn = document.getElementById('downloadFilteredCsvBtn');
+    if (dlCsvBtn) dlCsvBtn.addEventListener('click', exportFilteredCsv);
 }
 
 function setActiveFilterButton(activeBtn, inactiveBtns) {
@@ -515,6 +560,7 @@ function applyDashboardData(data) {
     filteredTransactions = [...allTransactions];
     currentPage = 1;
     renderTablePage();
+    calculateLiveSimulation();
 
     const totalCount = data.meta?.total || allTransactions.length;
     document.getElementById('tableCountBadge').innerText = `${totalCount} Data`;
@@ -901,3 +947,506 @@ function exportToCsv() {
     link.click();
     document.body.removeChild(link);
 }
+
+/* ==========================================================================
+   FITUR BARU: API PUBLIK & MANAJEMEN DATABASE
+   - Filter persentase data publik khusus hari ini
+   - Sinkronisasi snapshot terfilter ke Cloud Firestore per 5 jam / manual
+   - Halaman tersendiri untuk preview, ekspor, dan restore snapshot
+   ========================================================================== */
+
+let currentSliderPercentage = 50;
+let publicDbSnapshots = [];
+let selectedSnapshotIndex = 0;
+
+/**
+ * Switch between Main Realtime Dashboard and Public API / Database View
+ */
+function switchView(viewName) {
+    const mainView = document.getElementById('mainDashboardView');
+    const publicView = document.getElementById('publicApiView');
+    const navDash = document.getElementById('navDashboardBtn');
+    const navTx = document.getElementById('navTransactionsBtn');
+    const navCharts = document.getElementById('navChartsBtn');
+    const navPublic = document.getElementById('navPublicApiBtn');
+
+    const defaultNavClass = 'w-full flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors text-left';
+    const activeNavClass = 'w-full flex items-center gap-3 px-3 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-medium transition-colors text-left';
+
+    if (navDash) navDash.className = defaultNavClass;
+    if (navTx) navTx.className = defaultNavClass;
+    if (navCharts) navCharts.className = defaultNavClass;
+    if (navPublic) navPublic.className = defaultNavClass + ' group';
+
+    if (viewName === 'publicApi') {
+        if (mainView) mainView.classList.add('hidden');
+        if (publicView) publicView.classList.remove('hidden');
+        if (navPublic) navPublic.className = activeNavClass + ' group';
+        updatePublicApiUrl();
+        calculateLiveSimulation();
+        fetchDatabaseSnapshots();
+    } else {
+        if (publicView) publicView.classList.add('hidden');
+        if (mainView) mainView.classList.remove('hidden');
+
+        if (viewName === 'dashboard' && navDash) {
+            navDash.className = activeNavClass;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (viewName === 'transactions') {
+            if (navTx) navTx.className = activeNavClass;
+            const txCard = document.getElementById('transactionsCard');
+            if (txCard) txCard.scrollIntoView({ behavior: 'smooth' });
+        } else if (viewName === 'charts') {
+            if (navCharts) navCharts.className = activeNavClass;
+            const chartsSection = document.getElementById('revenueChart');
+            if (chartsSection) chartsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+    }
+
+    // Close mobile sidebar if open
+    const sidebar = document.getElementById('sidebar');
+    const mobileBackdrop = document.getElementById('mobileBackdrop');
+    if (window.innerWidth < 768 && sidebar && !sidebar.classList.contains('hidden')) {
+        sidebar.classList.add('hidden');
+        sidebar.classList.remove('flex');
+        if (mobileBackdrop) mobileBackdrop.classList.add('hidden');
+    }
+
+    initLucide();
+}
+
+/**
+ * Update slider value and trigger live simulation recalculation
+ */
+function updateSliderUI(val) {
+    currentSliderPercentage = Math.max(1, Math.min(100, Number(val) || 50));
+    const slider = document.getElementById('percentageSlider');
+    if (slider) slider.value = currentSliderPercentage;
+    const txt = document.getElementById('sliderValueText');
+    if (txt) txt.innerText = `${currentSliderPercentage}%`;
+    calculateLiveSimulation();
+    updatePublicApiUrl();
+}
+
+// Preset button handler exposed to window for inline onclicks
+window.setSliderPreset = function(val) {
+    updateSliderUI(val);
+};
+
+/**
+ * Calculate live simulation numbers for current slider percentage
+ */
+function calculateLiveSimulation() {
+    const txs = allTransactions || [];
+    const totalReal = txs.length;
+    const percentage = currentSliderPercentage;
+    const targetCount = totalReal === 0 ? 0 : Math.max(1, Math.min(totalReal, Math.round(totalReal * (percentage / 100))));
+
+    const simTotalEl = document.getElementById('simTotalReal');
+    const simCountEl = document.getElementById('simFilteredCount');
+    const simRevEl = document.getElementById('simFilteredRevenue');
+    const simTaxEl = document.getElementById('simFilteredTax');
+
+    if (simTotalEl) simTotalEl.innerText = `${totalReal} Transaksi`;
+    if (simCountEl) simCountEl.innerText = `${targetCount} Transaksi`;
+
+    if (totalReal === 0) {
+        if (simRevEl) simRevEl.innerText = 'Rp 0';
+        if (simTaxEl) simTaxEl.innerText = 'Rp 0';
+        return;
+    }
+
+    // Sample transactions evenly to reflect the full day
+    let filtered = [];
+    if (targetCount >= totalReal) {
+        filtered = [...txs];
+    } else {
+        const step = totalReal / targetCount;
+        const selected = new Set();
+        for (let i = 0; i < targetCount; i++) {
+            const idx = Math.min(totalReal - 1, Math.floor(i * step));
+            if (!selected.has(idx)) {
+                selected.add(idx);
+                filtered.push(txs[idx]);
+            }
+        }
+        let fallback = 0;
+        while (filtered.length < targetCount && fallback < totalReal) {
+            if (!selected.has(fallback)) {
+                selected.add(fallback);
+                filtered.push(txs[fallback]);
+            }
+            fallback++;
+        }
+    }
+
+    let filteredRevenue = 0;
+    let filteredTax = 0;
+    filtered.forEach(tx => {
+        filteredRevenue += Number(tx.paid_amount) || Number(tx.subtotal) || 0;
+        filteredTax += Number(tx.tax) || 0;
+    });
+
+    if (simRevEl) simRevEl.innerText = 'Rp ' + Math.round(filteredRevenue).toLocaleString('id-ID');
+    if (simTaxEl) simTaxEl.innerText = 'Rp ' + Math.round(filteredTax).toLocaleString('id-ID');
+}
+
+/**
+ * Update Public API URL displayed on page
+ */
+function updatePublicApiUrl() {
+    const origin = window.location.origin;
+    const url = `${origin}/api/public?percentage=${currentSliderPercentage}`;
+    const textEl = document.getElementById('publicApiUrlText');
+    const openBtn = document.getElementById('openApiUrlBtn');
+    if (textEl) textEl.innerText = url;
+    if (openBtn) openBtn.href = url;
+}
+
+/**
+ * Setup Copy URL to clipboard button
+ */
+function setupCopyUrlButton() {
+    const copyBtn = document.getElementById('copyApiUrlBtn');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            const origin = window.location.origin;
+            const url = `${origin}/api/public?percentage=${currentSliderPercentage}`;
+            navigator.clipboard.writeText(url).then(() => {
+                const txt = document.getElementById('copyBtnText');
+                if (txt) {
+                    txt.innerText = 'Tersalin!';
+                    setTimeout(() => {
+                        txt.innerText = 'Salin Tautan API';
+                    }, 2000);
+                }
+            }).catch(() => {
+                alert('Tautan API: ' + url);
+            });
+        });
+    }
+}
+
+/**
+ * Save chosen percentage as default in database
+ */
+async function saveDefaultPercentage() {
+    const btn = document.getElementById('saveDefaultPercentageBtn');
+    if (!btn) return;
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Menyimpan...</span>`;
+    initLucide();
+
+    try {
+        const res = await fetch('/api/database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'save_config',
+                percentage: currentSliderPercentage
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            btn.classList.add('bg-emerald-100', 'text-emerald-800', 'border-emerald-300');
+            btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5"></i><span>Default Tersimpan (${currentSliderPercentage}%)</span>`;
+            initLucide();
+            setTimeout(() => {
+                btn.classList.remove('bg-emerald-100', 'text-emerald-800', 'border-emerald-300');
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+                initLucide();
+            }, 2000);
+        } else {
+            throw new Error(data.message || 'Gagal menyimpan konfigurasi');
+        }
+    } catch (err) {
+        alert('Gagal menyimpan: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        initLucide();
+    }
+}
+
+/**
+ * Trigger immediate snapshot synchronization to Cloud Firestore
+ */
+async function triggerDatabaseSyncNow() {
+    const btn = document.getElementById('manualDbSyncBtn');
+    if (!btn) return;
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Menyimpan ke Cloud Firestore...</span>`;
+    initLucide();
+
+    try {
+        const res = await fetch('/api/database', {
+            method: 'POST',
+            headers: {
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: 'sync_now',
+                percentage: currentSliderPercentage
+            })
+        });
+
+        const json = await res.json();
+        if (res.ok && json.status === 'success') {
+            btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+            btn.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
+            btn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i><span>Snapshot Berhasil Disimpan!</span>`;
+            initLucide();
+
+            await fetchDatabaseSnapshots();
+
+            setTimeout(() => {
+                btn.classList.remove('bg-emerald-600', 'hover:bg-emerald-700');
+                btn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+                initLucide();
+            }, 2500);
+        } else {
+            throw new Error(json.message || 'Gagal menyimpan snapshot');
+        }
+    } catch (err) {
+        alert('Gagal menyimpan snapshot ke database: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        initLucide();
+    }
+}
+
+/**
+ * Fetch list of database snapshots from /api/database
+ */
+async function fetchDatabaseSnapshots() {
+    const tbody = document.getElementById('filteredTableBody');
+    const pillsContainer = document.getElementById('snapshotPillsContainer');
+    const badge = document.getElementById('snapshotCountBadge');
+    const lastSyncEl = document.getElementById('dbLastSyncText');
+    const nextSyncEl = document.getElementById('dbNextSyncText');
+
+    try {
+        const res = await fetch('/api/database');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+
+        if (json.config && json.config.percentage && !window._hasLoadedConfig) {
+            window._hasLoadedConfig = true;
+            updateSliderUI(json.config.percentage);
+        }
+
+        publicDbSnapshots = json.snapshots || [];
+        if (badge) badge.innerText = `${publicDbSnapshots.length} Snapshot`;
+
+        if (publicDbSnapshots.length === 0) {
+            if (lastSyncEl) lastSyncEl.innerText = 'Belum ada snapshot';
+            if (pillsContainer) pillsContainer.innerHTML = `<span class="text-slate-400 italic">Belum ada snapshot tersimpan. Klik tombol simpan snapshot di atas.</span>`;
+            if (tbody) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="p-8 text-center text-slate-400">
+                            <div class="flex flex-col items-center justify-center gap-1">
+                                <i data-lucide="database" class="w-8 h-8 text-slate-300"></i>
+                                <p class="font-medium text-slate-500">Belum ada snapshot tersimpan di database</p>
+                                <p class="text-xs text-slate-400">Gunakan tombol di atas untuk menyimpan data terfilter ke Cloud Firestore.</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                initLucide();
+            }
+            return;
+        }
+
+        // Format last sync time
+        const latest = publicDbSnapshots[0];
+        const latestDate = new Date(latest.created_at || latest.synced_at || Date.now());
+        const timeStr = latestDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = latestDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+        if (lastSyncEl) lastSyncEl.innerText = `${dateStr}, ${timeStr} WIB (${latest.saved_count || latest.filtered_count || 0} data / ${latest.percentage}%)`;
+
+        // Calculate next 5-hour sync schedule
+        if (nextSyncEl) {
+            const nextSyncTime = new Date(latestDate.getTime() + 5 * 60 * 60 * 1000);
+            const nextTimeStr = nextSyncTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            nextSyncEl.innerText = `± ${nextTimeStr} WIB (Siklus 5 Jam)`;
+        }
+
+        // Render snapshot selector pills
+        if (pillsContainer) {
+            let pillsHtml = '';
+            publicDbSnapshots.forEach((snap, idx) => {
+                const sDate = new Date(snap.created_at || snap.synced_at || Date.now());
+                const sTime = sDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                const isSelected = idx === selectedSnapshotIndex;
+                const btnClass = isSelected
+                    ? 'px-3 py-1 bg-indigo-600 text-white rounded-lg font-bold shadow-sm'
+                    : 'px-3 py-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg font-medium';
+                
+                const snapLabel = snap.id ? snap.id.substring(0, 10) : `Snapshot #${idx + 1}`;
+                pillsHtml += `
+                    <button onclick="selectDatabaseSnapshot(${idx})" class="${btnClass} shrink-0 transition-all flex items-center gap-1.5 text-xs">
+                        <span>${snapLabel} (${sTime})</span>
+                        <span class="text-[10px] px-1.5 py-0.2 rounded bg-black/10 font-bold">${snap.percentage}%</span>
+                    </button>
+                `;
+            });
+            pillsContainer.innerHTML = pillsHtml;
+        }
+
+        renderSelectedSnapshotTable();
+
+    } catch (err) {
+        console.error('Failed to fetch database snapshots:', err);
+        if (lastSyncEl) lastSyncEl.innerText = 'Gagal memuat dari Cloud';
+    }
+}
+
+/**
+ * Handle selecting a specific snapshot pill
+ */
+window.selectDatabaseSnapshot = function(idx) {
+    selectedSnapshotIndex = idx;
+    const pillsContainer = document.getElementById('snapshotPillsContainer');
+    if (pillsContainer) {
+        const buttons = pillsContainer.querySelectorAll('button');
+        buttons.forEach((btn, i) => {
+            if (i === idx) {
+                btn.className = 'px-3 py-1 bg-indigo-600 text-white rounded-lg font-bold shadow-sm shrink-0 transition-all flex items-center gap-1.5 text-xs';
+            } else {
+                btn.className = 'px-3 py-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg font-medium shrink-0 transition-all flex items-center gap-1.5 text-xs';
+            }
+        });
+    }
+    renderSelectedSnapshotTable();
+};
+
+/**
+ * Render table rows for selected snapshot
+ */
+function renderSelectedSnapshotTable() {
+    const tbody = document.getElementById('filteredTableBody');
+    if (!tbody) return;
+
+    const snap = publicDbSnapshots[selectedSnapshotIndex] || publicDbSnapshots[0];
+    if (!snap) return;
+
+    let txs = snap.transactions || [];
+    if (typeof txs === 'string') {
+        try { txs = JSON.parse(txs); } catch (e) { txs = []; }
+    }
+
+    if (txs.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="p-8 text-center text-slate-400">
+                    <p>Snapshot ini tidak memiliki rincian transaksi.</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    let html = '';
+    txs.forEach((tx) => {
+        const isVoid = tx.voided === 1;
+        const timePart = tx.order_time ? tx.order_time.split(' ')[1] : '-';
+        const paymentBadge = getPaymentBadge(tx.payment_mode_name);
+        const statusBadge = isVoid 
+            ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">Batal / Void</span>`
+            : `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Sukses</span>`;
+
+        html += `
+            <tr class="hover:bg-slate-50/70 transition-colors">
+                <td class="p-4 font-mono font-medium text-indigo-600 text-xs sm:text-sm">
+                    ${tx.order_no}
+                </td>
+                <td class="p-4 text-slate-500 text-xs sm:text-sm">
+                    ${timePart} WIB
+                </td>
+                <td class="p-4">
+                    ${paymentBadge}
+                </td>
+                <td class="p-4 text-slate-600 font-medium">
+                    ${tx.fsubtotal || 'Rp ' + Number(tx.subtotal).toLocaleString('id-ID')}
+                </td>
+                <td class="p-4 text-slate-500">
+                    ${tx.ftax || 'Rp ' + Number(tx.tax).toLocaleString('id-ID')}
+                </td>
+                <td class="p-4 font-bold text-slate-900 text-sm">
+                    ${tx.fpaid_amount || 'Rp ' + Number(tx.paid_amount).toLocaleString('id-ID')}
+                </td>
+                <td class="p-4">
+                    ${statusBadge}
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+    initLucide();
+}
+
+/**
+ * Export selected database snapshot as JSON file
+ */
+function exportFilteredJson() {
+    const snap = publicDbSnapshots[selectedSnapshotIndex] || publicDbSnapshots[0];
+    if (!snap) {
+        alert('Belum ada snapshot database untuk diekspor!');
+        return;
+    }
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(snap, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `snapshot_database_${snap.date || getTodayString()}_${snap.percentage || 50}pct.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+}
+
+/**
+ * Export selected database snapshot as CSV file
+ */
+function exportFilteredCsv() {
+    const snap = publicDbSnapshots[selectedSnapshotIndex] || publicDbSnapshots[0];
+    if (!snap) {
+        alert('Belum ada snapshot database untuk diekspor!');
+        return;
+    }
+    let txs = snap.transactions || [];
+    if (typeof txs === 'string') {
+        try { txs = JSON.parse(txs); } catch(e) { txs = []; }
+    }
+    if (txs.length === 0) {
+        alert('Tidak ada transaksi dalam snapshot ini untuk diekspor.');
+        return;
+    }
+
+    const headers = ['Order No', 'Order Time', 'Payment Mode', 'Subtotal', 'Tax', 'Paid Amount', 'Status'];
+    const rows = txs.map(tx => [
+        `"${tx.order_no}"`,
+        `"${tx.order_time}"`,
+        `"${tx.payment_mode_name}"`,
+        tx.subtotal,
+        tx.tax,
+        tx.paid_amount,
+        tx.voided === 1 ? 'Void' : 'Success'
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `snapshot_database_${snap.date || getTodayString()}_${snap.percentage || 50}pct.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
