@@ -1,6 +1,7 @@
 /**
  * Dashboard Olsera Client Application
- * Handles data fetching, live auto-refresh, Chart.js updates, filtering and UI interactions.
+ * Handles data fetching, live auto-refresh, Chart.js updates, filtering,
+ * and dynamic Olsera account switching with multi-outlet support.
  */
 
 // State
@@ -14,11 +15,46 @@ let autoRefreshTimer = null;
 let revenueChart = null;
 let paymentChart = null;
 
+// Custom Account Storage Key
+const STORAGE_KEY = 'olsera_active_account_v1';
+
+// Active account state (default or custom)
+let activeAccount = loadSavedAccount();
+
+function loadSavedAccount() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.warn('Failed to parse saved account:', e);
+    }
+    return {
+        isCustom: false,
+        username: 'bapendapedua@gmail.com',
+        token: null,
+        storeUrlId: 'naikicafe',
+        stores: []
+    };
+}
+
+function saveAccount(acc) {
+    activeAccount = acc;
+    if (acc.isCustom) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(acc));
+    } else {
+        localStorage.removeItem(STORAGE_KEY);
+    }
+    updateAccountUI();
+}
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     initLucide();
     initCharts();
     setupEventListeners();
+    updateAccountUI();
     fetchDashboardData();
     setupAutoRefresh();
 });
@@ -44,6 +80,32 @@ function getYesterdayString() {
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get headers including custom Olsera account credentials if set
+ */
+function getAuthHeaders() {
+    const headers = {
+        'Accept': 'application/json'
+    };
+
+    if (activeAccount.isCustom) {
+        if (activeAccount.token) {
+            headers['x-olsera-token'] = activeAccount.token;
+        }
+        if (activeAccount.username) {
+            headers['x-olsera-username'] = activeAccount.username;
+        }
+        if (activeAccount.password) {
+            headers['x-olsera-password'] = activeAccount.password;
+        }
+        if (activeAccount.storeUrlId) {
+            headers['x-olsera-store'] = activeAccount.storeUrlId;
+        }
+    }
+
+    return headers;
 }
 
 /**
@@ -125,7 +187,7 @@ function initCharts() {
         }
     });
 
-    // 2. Payment Methods Donut / Pie Chart
+    // 2. Payment Methods Donut Chart
     const payCtx = document.getElementById('paymentChart').getContext('2d');
     paymentChart = new Chart(payCtx, {
         type: 'doughnut',
@@ -174,8 +236,7 @@ function initCharts() {
  */
 function setupEventListeners() {
     // Refresh Button
-    const refreshBtn = document.getElementById('refreshBtn');
-    refreshBtn.addEventListener('click', () => {
+    document.getElementById('refreshBtn').addEventListener('click', () => {
         triggerManualSync();
     });
 
@@ -203,8 +264,7 @@ function setupEventListeners() {
     });
 
     // Search Input filter
-    const searchInput = document.getElementById('searchInput');
-    searchInput.addEventListener('input', (e) => {
+    document.getElementById('searchInput').addEventListener('input', (e) => {
         filterTransactions(e.target.value);
     });
 
@@ -229,7 +289,7 @@ function setupEventListeners() {
         setupAutoRefresh(Number(e.target.value));
     });
 
-    // Modal Close
+    // Modal Close handlers
     document.getElementById('closeModalBtn').addEventListener('click', closeModal);
     document.getElementById('closeModalBtn2').addEventListener('click', closeModal);
     document.getElementById('detailModal').addEventListener('click', (e) => {
@@ -254,6 +314,38 @@ function setupEventListeners() {
         sidebar.classList.add('hidden');
         sidebar.classList.remove('flex');
         mobileBackdrop.classList.add('hidden');
+    });
+
+    // Account Modal triggers
+    document.getElementById('switchAccountBtn').addEventListener('click', openAccountModal);
+    document.getElementById('headerAccountBtn').addEventListener('click', openAccountModal);
+    document.getElementById('closeAccountModalBtn').addEventListener('click', closeAccountModal);
+    document.getElementById('accountModal').addEventListener('click', (e) => {
+        if (e.target.id === 'accountModal') closeAccountModal();
+    });
+
+    // Toggle Password Visibility
+    document.getElementById('togglePasswordBtn').addEventListener('click', () => {
+        const pwInput = document.getElementById('inputPassword');
+        const isPw = pwInput.type === 'password';
+        pwInput.type = isPw ? 'text' : 'password';
+    });
+
+    // Account Form Submit
+    document.getElementById('accountForm').addEventListener('submit', handleAccountSubmit);
+
+    // Reset Account Button
+    document.getElementById('resetAccountBtn').addEventListener('click', handleResetAccount);
+
+    // Outlet selector change
+    const outletSelect = document.getElementById('outletSelect');
+    outletSelect.addEventListener('change', (e) => {
+        if (e.target.value) {
+            activeAccount.storeUrlId = e.target.value;
+            saveAccount(activeAccount);
+            closeAccountModal();
+            fetchDashboardData();
+        }
     });
 }
 
@@ -286,7 +378,7 @@ function setupAutoRefresh(customMs = null) {
 
     if (ms > 0) {
         autoRefreshTimer = setInterval(() => {
-            fetchDashboardData(true); // silent background fetch
+            fetchDashboardData(true);
         }, ms);
     }
 }
@@ -299,7 +391,16 @@ async function triggerManualSync() {
     refreshIcon.classList.add('spin-refresh');
 
     try {
-        const res = await fetch(`/api/sync?date=${currentDate}`, { method: 'POST' });
+        const headers = {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json'
+        };
+
+        const res = await fetch(`/api/sync?date=${currentDate}`, {
+            method: 'POST',
+            headers
+        });
+
         if (res.ok) {
             const result = await res.json();
             if (result.data) {
@@ -326,7 +427,10 @@ async function fetchDashboardData(isBackground = false) {
     }
 
     try {
-        const res = await fetch(`/api/dashboard?date=${currentDate}`);
+        const res = await fetch(`/api/dashboard?date=${currentDate}`, {
+            headers: getAuthHeaders()
+        });
+
         if (!res.ok) {
             throw new Error(`HTTP ${res.status}`);
         }
@@ -335,7 +439,7 @@ async function fetchDashboardData(isBackground = false) {
         applyDashboardData(data);
     } catch (error) {
         console.error('Fetch error:', error);
-        document.getElementById('lastUpdatedText').innerText = 'Gagal sinkron (Periksa koneksi)';
+        document.getElementById('lastUpdatedText').innerText = 'Gagal sinkron (Periksa koneksi atau akun)';
     } finally {
         if (!isBackground) {
             refreshIcon.classList.remove('spin-refresh');
@@ -351,9 +455,20 @@ function applyDashboardData(data) {
 
     // Store Info
     if (data.store) {
-        document.getElementById('storeNameText').innerText = data.store.name || 'Naiki Cafe';
-        document.getElementById('outletBadge').innerText = data.store.name || 'Naiki Cafe';
+        const name = data.store.name || 'Naiki cafe';
+        document.getElementById('storeNameText').innerText = name;
+        document.getElementById('storeNameText').title = name;
+        document.getElementById('outletBadge').innerText = name;
+        document.getElementById('headerStoreName').innerText = name;
         document.getElementById('userRoleBadge').innerText = data.store.role || 'Perpajakan (PJ)';
+    }
+
+    // Account Info
+    if (data.account) {
+        const email = activeAccount.isCustom ? activeAccount.username : 'bapendapedua@gmail.com';
+        document.getElementById('activeUserEmail').innerText = `Akun: ${email}`;
+        document.getElementById('headerUserName').innerText = activeAccount.isCustom ? (activeAccount.name || email.split('@')[0]) : 'Bapenda Admin';
+        document.getElementById('userAvatarText').innerText = (email[0] || 'O').toUpperCase();
     }
 
     // KPI Cards
@@ -363,7 +478,6 @@ function applyDashboardData(data) {
         document.getElementById('kpiAvgSale').innerText = data.kpi.average_sale.formatted;
         document.getElementById('kpiTax').innerText = data.kpi.tax.formatted;
 
-        // Revenue Growth Badge
         const growthBadge = document.getElementById('revenueGrowthBadge');
         const pct = data.kpi.revenue.growthPct || 0;
         if (pct >= 0) {
@@ -402,12 +516,10 @@ function applyDashboardData(data) {
     currentPage = 1;
     renderTablePage();
 
-    // Table Badge
     const totalCount = data.meta?.total || allTransactions.length;
     document.getElementById('tableCountBadge').innerText = `${totalCount} Data`;
     document.getElementById('navTxBadge').innerText = totalCount;
 
-    // Last Updated Time
     const now = new Date();
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     document.getElementById('lastUpdatedText').innerText = `Terakhir sinkron: ${timeStr} WIB`;
@@ -596,6 +708,167 @@ window.openDetailModal = function (orderNo) {
 
 function closeModal() {
     document.getElementById('detailModal').classList.add('hidden');
+}
+
+/**
+ * Account Modal Controls
+ */
+function updateAccountUI() {
+    const isCustom = activeAccount.isCustom;
+    const email = isCustom ? activeAccount.username : 'bapendapedua@gmail.com';
+    const storeName = (dashboardData?.store?.name) || (activeAccount.storeName) || 'Naiki cafe';
+
+    document.getElementById('modalCurrentEmail').innerText = email;
+    document.getElementById('modalCurrentStore').innerText = storeName;
+
+    const typeBadge = document.getElementById('modalAccountTypeBadge');
+    if (isCustom) {
+        typeBadge.className = 'px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-600 text-white';
+        typeBadge.innerText = 'Akun Kustom';
+    } else {
+        typeBadge.className = 'px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-600 text-white';
+        typeBadge.innerText = 'Bawaan Bapenda';
+    }
+
+    // Populate outlet select if account has multiple stores
+    const outletGroup = document.getElementById('outletSelectGroup');
+    const outletSelect = document.getElementById('outletSelect');
+
+    if (activeAccount.stores && activeAccount.stores.length > 1) {
+        outletGroup.classList.remove('hidden');
+        outletSelect.innerHTML = activeAccount.stores.map(s => `
+            <option value="${s.url_id}" ${s.url_id === activeAccount.storeUrlId ? 'selected' : ''}>
+                ${s.name} (${s.role || 'POS'})
+            </option>
+        `).join('');
+    } else {
+        outletGroup.classList.add('hidden');
+    }
+}
+
+function openAccountModal() {
+    updateAccountUI();
+    hideAlert();
+    document.getElementById('accountModal').classList.remove('hidden');
+    initLucide();
+}
+
+function closeAccountModal() {
+    document.getElementById('accountModal').classList.add('hidden');
+    hideAlert();
+}
+
+function showAlert(message, type = 'error') {
+    const el = document.getElementById('authAlert');
+    el.classList.remove('hidden', 'bg-red-50', 'text-red-700', 'border-red-200', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+
+    if (type === 'error') {
+        el.classList.add('bg-red-50', 'text-red-700', 'border', 'border-red-200');
+    } else {
+        el.classList.add('bg-emerald-50', 'text-emerald-700', 'border', 'border-emerald-200');
+    }
+    el.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="${type === 'error' ? 'alert-circle' : 'check-circle'}" class="w-4 h-4 shrink-0"></i><span>${message}</span></div>`;
+    el.classList.remove('hidden');
+    initLucide();
+}
+
+function hideAlert() {
+    const el = document.getElementById('authAlert');
+    el.classList.add('hidden');
+}
+
+/**
+ * Handle Account Form Submission (Login with new Olsera credentials)
+ */
+async function handleAccountSubmit(e) {
+    e.preventDefault();
+    hideAlert();
+
+    const email = document.getElementById('inputEmail').value.trim();
+    const password = document.getElementById('inputPassword').value;
+    const saveBtn = document.getElementById('saveAccountBtn');
+
+    if (!email || !password) {
+        showAlert('Harap isi email dan password Olsera.');
+        return;
+    }
+
+    const origBtnHtml = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Menghubungkan ke Olsera...</span>`;
+    initLucide();
+
+    try {
+        const res = await fetch('/api/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: email, password })
+        });
+
+        const json = await res.json();
+
+        if (!res.ok || json.status !== 'success') {
+            throw new Error(json.message || 'Gagal login ke Olsera. Periksa username dan password.');
+        }
+
+        const data = json.data;
+        const stores = data.stores || [];
+        const primaryStore = stores[0] || { name: 'Outlet Olsera', url_id: 'naikicafe' };
+
+        // Save new account state
+        saveAccount({
+            isCustom: true,
+            username: email,
+            password: password,
+            token: data.token,
+            storeUrlId: primaryStore.url_id,
+            storeName: primaryStore.name,
+            stores: stores,
+            name: data.user?.name || email.split('@')[0]
+        });
+
+        showAlert(`Berhasil terhubung ke akun ${email}! Memuat outlet ${primaryStore.name}...`, 'success');
+
+        // Reset form
+        document.getElementById('inputEmail').value = '';
+        document.getElementById('inputPassword').value = '';
+
+        setTimeout(() => {
+            closeAccountModal();
+            fetchDashboardData();
+        }, 1200);
+
+    } catch (err) {
+        showAlert(err.message || 'Terjadi kesalahan saat menghubungkan akun.');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = origBtnHtml;
+        initLucide();
+    }
+}
+
+/**
+ * Reset back to default Bapenda account
+ */
+function handleResetAccount() {
+    if (confirm('Apakah Anda yakin ingin mengembalikan akun ke bawaan Bapenda (bapendapedua@gmail.com)?')) {
+        saveAccount({
+            isCustom: false,
+            username: 'bapendapedua@gmail.com',
+            token: null,
+            storeUrlId: 'naikicafe',
+            stores: []
+        });
+
+        document.getElementById('inputEmail').value = '';
+        document.getElementById('inputPassword').value = '';
+        showAlert('Akun dikembalikan ke bawaan Bapenda.', 'success');
+
+        setTimeout(() => {
+            closeAccountModal();
+            fetchDashboardData();
+        }, 800);
+    }
 }
 
 /**

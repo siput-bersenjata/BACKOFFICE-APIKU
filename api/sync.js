@@ -1,4 +1,4 @@
-const { getFullDashboard, getToken } = require('../lib/olsera');
+const { getFullDashboard, getToken, extractAuthContext } = require('../lib/olsera');
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -6,7 +6,7 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-olsera-token, x-olsera-store, x-olsera-username, x-olsera-password'
   );
 
   if (req.method === 'OPTIONS') {
@@ -15,10 +15,11 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // Force refresh token and pull fresh dashboard data
-    await getToken(true);
+    const authContext = extractAuthContext(req);
+    // Refresh token if needed
+    await getToken(authContext, true);
     const date = req.query?.date || req.body?.date;
-    const dashboardData = await getFullDashboard(date);
+    const dashboardData = await getFullDashboard(date, authContext);
 
     res.status(200).json({
       status: 'success',

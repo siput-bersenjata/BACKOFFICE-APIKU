@@ -1,13 +1,12 @@
-const { getFullDashboard } = require('../lib/olsera');
+const { getFullDashboard, extractAuthContext } = require('../lib/olsera');
 
 module.exports = async (req, res) => {
-  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-olsera-token, x-olsera-store, x-olsera-username, x-olsera-password'
   );
 
   if (req.method === 'OPTIONS') {
@@ -17,7 +16,8 @@ module.exports = async (req, res) => {
 
   try {
     const { date } = req.query || {};
-    const dashboardData = await getFullDashboard(date);
+    const authContext = extractAuthContext(req);
+    const dashboardData = await getFullDashboard(date, authContext);
     res.status(200).json(dashboardData);
   } catch (error) {
     console.error('[API /api/dashboard] Error:', error);

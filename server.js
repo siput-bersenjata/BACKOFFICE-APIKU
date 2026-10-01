@@ -27,6 +27,7 @@ const MIME_TYPES = {
 const dashboardHandler = require('./api/dashboard');
 const transactionsHandler = require('./api/transactions');
 const syncHandler = require('./api/sync');
+const authHandler = require('./api/auth');
 
 async function handleRequest(req, res) {
   const parsedUrl = url.parse(req.url, true);
@@ -53,6 +54,8 @@ async function handleRequest(req, res) {
     return transactionsHandler(req, res);
   } else if (pathname === '/api/sync') {
     return syncHandler(req, res);
+  } else if (pathname === '/api/auth') {
+    return authHandler(req, res);
   }
 
   // Static files in public/
