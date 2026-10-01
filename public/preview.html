@@ -143,7 +143,9 @@
     </main>
 
     <script>
-        lucide.createIcons();
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
 
         function getPaymentBadge(mode) {
             const m = (mode || '').toLowerCase();

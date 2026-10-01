@@ -57,7 +57,7 @@ module.exports = async (req, res) => {
       const selectedIndices = new Set();
       for (let i = 0; i < targetCount; i++) {
         const idx = Math.min(totalReal - 1, Math.floor(i * step));
-        if (!selectedIndices.has(idx)) {
+        if (idx >= 0 && !selectedIndices.has(idx) && allTx[idx] !== undefined) {
           selectedIndices.add(idx);
           filtered.push(allTx[idx]);
         }
@@ -65,13 +65,16 @@ module.exports = async (req, res) => {
       // If due to rounding we need more
       let fallbackIdx = 0;
       while (filtered.length < targetCount && fallbackIdx < totalReal) {
-        if (!selectedIndices.has(fallbackIdx)) {
+        if (!selectedIndices.has(fallbackIdx) && allTx[fallbackIdx] !== undefined) {
           selectedIndices.add(fallbackIdx);
           filtered.push(allTx[fallbackIdx]);
         }
         fallbackIdx++;
       }
     }
+
+    // Filter out undefined just in case
+    filtered = filtered.filter(tx => tx !== undefined);
 
     // Resequence order numbers so there are no gaps/jumps
     filtered = resequenceOrderNumbers(filtered);
