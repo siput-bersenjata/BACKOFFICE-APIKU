@@ -1,4 +1,4 @@
-const { getSalesDetails, formatDate, formatRupiah, extractAuthContext } = require('../lib/olsera');
+const { getSalesDetails, formatDate, formatRupiah, extractAuthContext, resequenceOrderNumbers } = require('../lib/olsera');
 const { getPublicConfig, saveSnapshot, shouldRun5HourSync } = require('../lib/database');
 
 module.exports = async (req, res) => {
@@ -73,7 +73,17 @@ module.exports = async (req, res) => {
       }
     }
 
-    // 5. Calculate totals for filtered dataset
+    // Resequence order numbers so there are no gaps/jumps
+    filtered = resequenceOrderNumbers(filtered);
+
+    // 5. Calculate totals for real and filtered datasets
+    let realRevenue = 0;
+    let realTax = 0;
+    allTx.forEach(tx => {
+      realRevenue += Number(tx.paid_amount) || Number(tx.subtotal) || 0;
+      realTax += Number(tx.tax) || 0;
+    });
+
     let filteredRevenue = 0;
     let filteredTax = 0;
 
@@ -105,8 +115,12 @@ module.exports = async (req, res) => {
         percentage_applied: `${percentage}%`,
         total_real_transactions: totalReal,
         filtered_transactions_count: filtered.length,
+        real_revenue: realRevenue,
+        formatted_real_revenue: formatRupiah(realRevenue),
         filtered_revenue: filteredRevenue,
         formatted_filtered_revenue: formatRupiah(filteredRevenue),
+        real_tax: realTax,
+        formatted_real_tax: formatRupiah(realTax),
         filtered_tax: filteredTax,
         formatted_filtered_tax: formatRupiah(filteredTax)
       },

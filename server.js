@@ -99,17 +99,41 @@ function start5HourScheduler() {
   setInterval(async () => {
     console.log('[Scheduler] Running 5-hour scheduled database snapshot...');
     try {
-      const { formatDate } = require('./lib/olsera');
+      const { formatDate, getSalesDetails, resequenceOrderNumbers } = require('./lib/olsera');
       const { getPublicConfig, saveSnapshot } = require('./lib/database');
-      const { getSalesDetails } = require('./lib/olsera');
 
       const today = formatDate(new Date());
       const config = await getPublicConfig();
       const page1 = await getSalesDetails(today, today, 1, 100);
       const allTx = page1.data || [];
       const totalReal = allTx.length;
-      const targetCount = Math.max(1, Math.round(totalReal * (config.percentage / 100)));
-      const filtered = allTx.slice(0, targetCount);
+      const targetCount = Math.max(1, Math.min(totalReal, Math.round(totalReal * (config.percentage / 100))));
+      
+      let filtered = [];
+      if (targetCount >= totalReal) {
+        filtered = [...allTx];
+      } else {
+        const step = totalReal / targetCount;
+        const selected = new Set();
+        for (let i = 0; i < targetCount; i++) {
+          const idx = Math.min(totalReal - 1, Math.floor(i * step));
+          if (!selected.has(idx)) {
+            selected.add(idx);
+            filtered.push(allTx[idx]);
+          }
+        }
+        let fallback = 0;
+        while (filtered.length < targetCount && fallback < totalReal) {
+          if (!selected.has(fallback)) {
+            selected.add(fallback);
+            filtered.push(allTx[fallback]);
+          }
+          fallback++;
+        }
+      }
+
+      // Resequence order numbers so there are no gaps/jumps
+      filtered = resequenceOrderNumbers(filtered);
 
       let rev = 0, tax = 0;
       filtered.forEach(t => {

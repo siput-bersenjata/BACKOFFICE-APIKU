@@ -383,8 +383,9 @@ function setupEventListeners() {
         manualDbSyncBtn.addEventListener('click', triggerDatabaseSyncNow);
     }
 
-    // Copy API URL
+    // Copy API URL & Filter Preview
     setupCopyUrlButton();
+    setupFilterPreviewControls();
 
     // Export Filtered Snapshot buttons
     const dlJsonBtn = document.getElementById('downloadFilteredJsonBtn');
@@ -1034,6 +1035,46 @@ window.setSliderPreset = function(val) {
 };
 
 /**
+ * Re-sequence order numbers sequentially starting from the first transaction's number
+ * to eliminate gaps/jumps caused by percentage filtering.
+ */
+function resequenceOrderNumbers(transactions) {
+    if (!Array.isArray(transactions) || transactions.length === 0) return transactions;
+    const first = transactions.find(t => t && t.order_no);
+    if (!first || !first.order_no) return transactions;
+
+    const str = String(first.order_no);
+    let match = str.match(/^(.*[^0-9])([0-9]+)$/);
+    let prefix = '';
+    let digitsStr = '';
+
+    if (match) {
+        prefix = match[1];
+        digitsStr = match[2];
+    } else if (/^\d+$/.test(str)) {
+        prefix = '';
+        digitsStr = str;
+    } else {
+        return transactions;
+    }
+
+    const padLength = digitsStr.length;
+    let currentVal = BigInt(digitsStr);
+
+    return transactions.map((t) => {
+        if (!t) return t;
+        const newNo = prefix + currentVal.toString().padStart(padLength, '0');
+        currentVal += 1n;
+        return {
+            ...t,
+            order_no: newNo
+        };
+    });
+}
+
+
+
+/**
  * Calculate live simulation numbers for current slider percentage
  */
 function calculateLiveSimulation() {
@@ -1080,6 +1121,9 @@ function calculateLiveSimulation() {
         }
     }
 
+    // Resequence order numbers so there are no jumps
+    filtered = resequenceOrderNumbers(filtered);
+
     let filteredRevenue = 0;
     let filteredTax = 0;
     filtered.forEach(tx => {
@@ -1099,8 +1143,10 @@ function updatePublicApiUrl() {
     const url = `${origin}/api/public?percentage=${currentSliderPercentage}`;
     const textEl = document.getElementById('publicApiUrlText');
     const openBtn = document.getElementById('openApiUrlBtn');
+    const previewBtn = document.getElementById('openPreviewPageBtn');
     if (textEl) textEl.innerText = url;
     if (openBtn) openBtn.href = url;
+    if (previewBtn) previewBtn.href = `/preview.html?percentage=${currentSliderPercentage}`;
 }
 
 /**
@@ -1341,6 +1387,7 @@ function renderSelectedSnapshotTable() {
     if (typeof txs === 'string') {
         try { txs = JSON.parse(txs); } catch (e) { txs = []; }
     }
+    txs = resequenceOrderNumbers(txs);
 
     if (txs.length === 0) {
         tbody.innerHTML = `
@@ -1402,7 +1449,11 @@ function exportFilteredJson() {
         alert('Belum ada snapshot database untuk diekspor!');
         return;
     }
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(snap, null, 2));
+    const cleanSnap = {
+        ...snap,
+        transactions: resequenceOrderNumbers(snap.transactions || [])
+    };
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(cleanSnap, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
     downloadAnchor.setAttribute('download', `snapshot_database_${snap.date || getTodayString()}_${snap.percentage || 50}pct.json`);
@@ -1424,6 +1475,7 @@ function exportFilteredCsv() {
     if (typeof txs === 'string') {
         try { txs = JSON.parse(txs); } catch(e) { txs = []; }
     }
+    txs = resequenceOrderNumbers(txs);
     if (txs.length === 0) {
         alert('Tidak ada transaksi dalam snapshot ini untuk diekspor.');
         return;

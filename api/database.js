@@ -1,4 +1,4 @@
-const { getSalesDetails, formatDate, extractAuthContext } = require('../lib/olsera');
+const { getSalesDetails, formatDate, extractAuthContext, resequenceOrderNumbers } = require('../lib/olsera');
 const { getPublicConfig, savePublicConfig, saveSnapshot, getSnapshots } = require('../lib/database');
 
 module.exports = async (req, res) => {
@@ -79,6 +79,9 @@ module.exports = async (req, res) => {
             fallback++;
           }
         }
+
+        // Resequence order numbers so there are no gaps/jumps
+        filtered = resequenceOrderNumbers(filtered);
 
         let filteredRevenue = 0;
         let filteredTax = 0;
