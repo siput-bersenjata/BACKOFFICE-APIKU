@@ -563,6 +563,97 @@
                 </div>
             </div>
 
+            <!-- Card 2.5: Pengaturan Siklus Bulanan & Masa Tenggang Database -->
+            <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-5">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <i data-lucide="calendar-clock" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-slate-900 text-base">Pengaturan Siklus Bulanan & Masa Tenggang Database</h4>
+                            <p class="text-xs text-slate-500">Database hanya menyimpan data hasil filter per periode bulanan. Berganti periode setiap awal bulan dengan masa jeda 2 hari.</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="retentionStatusBadge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            <span id="retentionStatusBadgeText">Siklus Bulanan Aktif</span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Info Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                        <span class="text-slate-400 font-medium block">Periode Bulan Berjalan</span>
+                        <span id="retentionPeriodText" class="font-bold text-slate-800 text-sm mt-0.5 block">Memuat...</span>
+                        <span class="text-[11px] text-emerald-600 font-medium">● Data aktif bulan ini</span>
+                    </div>
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                        <span class="text-slate-400 font-medium block">Masa Tenggang (Jeda)</span>
+                        <span id="retentionGraceStatusText" class="font-bold text-slate-800 text-sm mt-0.5 block">2 Hari (Tgl 1 - 2)</span>
+                        <span id="retentionGraceSubText" class="text-[11px] text-slate-500">Waktu jeda persiapan</span>
+                    </div>
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                        <span class="text-slate-400 font-medium block">Pembersihan Otomatis</span>
+                        <span id="retentionNextPurgeText" class="font-bold text-indigo-600 text-sm mt-0.5 block">Memuat...</span>
+                        <span class="text-[11px] text-slate-500">Pembersihan bulan lalu (Tgl 3)</span>
+                    </div>
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                        <span class="text-slate-400 font-medium block">Total Snapshot Tersimpan</span>
+                        <span id="retentionSnapshotCountText" class="font-bold text-slate-800 text-sm mt-0.5 block">0 Snapshot</span>
+                        <span class="text-[11px] text-slate-500">Sesuai periode aktif</span>
+                    </div>
+                </div>
+
+                <!-- Banner Informasi Alur 2 Hari -->
+                <div class="p-4 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-start gap-3 text-xs text-indigo-950">
+                    <i data-lucide="info" class="w-4 h-4 text-indigo-600 shrink-0 mt-0.5"></i>
+                    <div class="space-y-1">
+                        <p class="font-semibold text-indigo-900">Alur Kerja Retensi Bulanan & Jeda 2 Hari:</p>
+                        <p class="text-indigo-800 leading-relaxed">
+                            1. Selama 1 bulan berjalan, database hanya mengumpulkan dan menyimpan data hasil filter bulan tersebut.<br>
+                            2. Saat berganti bulan baru (misal masuk ke bulan berikutnya), data bulan lalu <strong>tetap disimpan sementara selama 2 hari (tanggal 1 & 2)</strong> sebagai jeda persiapan untuk rekap/ekspor.<br>
+                            3. Pada <strong>tanggal 3 bulan baru</strong>, data bulan lalu akan otomatis dibersihkan permanen, dan database berganti bersih untuk menampung periode bulan baru.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Form Setting & Action Buttons -->
+                <div class="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-100">
+                    <div class="flex flex-wrap items-center gap-4 text-xs">
+                        <label class="flex items-center gap-2 cursor-pointer select-none font-medium text-slate-700">
+                            <input id="retentionEnabledCheckbox" type="checkbox" checked class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300">
+                            <span>Aktifkan Batas Simpan Per Bulan</span>
+                        </label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-500">Masa Jeda Pergantian:</span>
+                            <select id="retentionGraceDaysSelect" class="bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value="1">1 Hari</option>
+                                <option value="2" selected>2 Hari (Default)</option>
+                                <option value="3">3 Hari</option>
+                            </select>
+                        </div>
+                        <button id="saveRetentionSettingsBtn" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm active:scale-95">
+                            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                            <span>Simpan Pengaturan Retensi</span>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button id="checkRetentionNowBtn" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors active:scale-95" title="Periksa apakah ada data bulan lalu yang melewati jeda 2 hari">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-slate-600"></i>
+                            <span>Cek Siklus Sekarang</span>
+                        </button>
+                        <button id="forceCleanupPrevMonthBtn" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors active:scale-95" title="Hapus data bulan sebelumnya tanpa menunggu jeda 2 hari">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-600"></i>
+                            <span>Bersihkan Bulan Lalu</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Card 3: Riwayat Snapshot Database Tersimpan -->
             <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                 <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

@@ -393,6 +393,16 @@ function setupEventListeners() {
 
     const dlCsvBtn = document.getElementById('downloadFilteredCsvBtn');
     if (dlCsvBtn) dlCsvBtn.addEventListener('click', exportFilteredCsv);
+
+    // Monthly Retention & Grace Period Controls
+    const saveRetentionBtn = document.getElementById('saveRetentionSettingsBtn');
+    if (saveRetentionBtn) saveRetentionBtn.addEventListener('click', saveRetentionSettings);
+
+    const checkRetentionBtn = document.getElementById('checkRetentionNowBtn');
+    if (checkRetentionBtn) checkRetentionBtn.addEventListener('click', checkRetentionCycleNow);
+
+    const forceCleanupBtn = document.getElementById('forceCleanupPrevMonthBtn');
+    if (forceCleanupBtn) forceCleanupBtn.addEventListener('click', forceCleanupPreviousMonth);
 }
 
 function setActiveFilterButton(activeBtn, inactiveBtns) {
@@ -1337,6 +1347,10 @@ async function fetchDatabaseSnapshots() {
             updateSliderUI(json.config.percentage, false);
         }
 
+        if (json.retention) {
+            updateRetentionUI(json.retention, json.config);
+        }
+
         publicDbSnapshots = json.snapshots || [];
         if (badge) badge.innerText = `${publicDbSnapshots.length} Snapshot`;
 
@@ -1551,4 +1565,175 @@ function exportFilteredCsv() {
     link.click();
     document.body.removeChild(link);
 }
+
+/**
+ * Update UI for Monthly Retention & Grace Period
+ */
+function updateRetentionUI(retention, config) {
+    if (!retention) return;
+
+    const periodEl = document.getElementById('retentionPeriodText');
+    const graceStatusEl = document.getElementById('retentionGraceStatusText');
+    const graceSubEl = document.getElementById('retentionGraceSubText');
+    const nextPurgeEl = document.getElementById('retentionNextPurgeText');
+    const snapshotCountEl = document.getElementById('retentionSnapshotCountText');
+    const badgeEl = document.getElementById('retentionStatusBadge');
+    const badgeTextEl = document.getElementById('retentionStatusBadgeText');
+    const checkboxEl = document.getElementById('retentionEnabledCheckbox');
+    const selectEl = document.getElementById('retentionGraceDaysSelect');
+
+    if (periodEl) periodEl.innerText = retention.current_period || '-';
+    if (nextPurgeEl) nextPurgeEl.innerText = retention.next_purge_date || '-';
+    if (snapshotCountEl) snapshotCountEl.innerText = `${publicDbSnapshots.length} Snapshot`;
+
+    if (checkboxEl && config) {
+        checkboxEl.checked = config.monthly_retention !== false;
+    }
+    if (selectEl && config) {
+        selectEl.value = String(config.grace_period_days || 2);
+    }
+
+    if (retention.is_grace_period_active) {
+        if (graceStatusEl) graceStatusEl.innerText = `Jeda Aktif (Sisa ${retention.grace_days_remaining} hari)`;
+        if (graceSubEl) graceSubEl.innerText = `Data ${retention.previous_period} masih disimpan`;
+        if (badgeEl) {
+            badgeEl.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200';
+        }
+        if (badgeTextEl) badgeTextEl.innerText = 'Masa Tenggang 2 Hari Aktif';
+    } else {
+        if (graceStatusEl) graceStatusEl.innerText = `Siklus Normal (Tgl ${retention.current_day})`;
+        if (graceSubEl) graceSubEl.innerText = 'Data bulan lalu telah dibersihkan';
+        if (badgeEl) {
+            badgeEl.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
+        }
+        if (badgeTextEl) badgeTextEl.innerText = 'Siklus Bulanan Aktif';
+    }
+}
+
+/**
+ * Save Retention Settings (monthly retention enable & grace days)
+ */
+async function saveRetentionSettings() {
+    const btn = document.getElementById('saveRetentionSettingsBtn');
+    const checkbox = document.getElementById('retentionEnabledCheckbox');
+    const select = document.getElementById('retentionGraceDaysSelect');
+    if (!btn) return;
+
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Menyimpan...</span>`;
+    initLucide();
+
+    try {
+        const monthly_retention = checkbox ? checkbox.checked : true;
+        const grace_period_days = select ? Number(select.value) : 2;
+
+        const res = await fetch('/api/database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'save_retention_config',
+                monthly_retention,
+                grace_period_days
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+            btn.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
+            btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5"></i><span>Tersimpan!</span>`;
+            initLucide();
+
+            if (data.retention) {
+                updateRetentionUI(data.retention, data.config);
+            }
+
+            setTimeout(() => {
+                btn.classList.remove('bg-emerald-600', 'hover:bg-emerald-700');
+                btn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+                initLucide();
+            }, 2000);
+        } else {
+            throw new Error(data.message || 'Gagal menyimpan pengaturan');
+        }
+    } catch (err) {
+        alert('Gagal menyimpan: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        initLucide();
+    }
+}
+
+/**
+ * Check & trigger monthly retention cycle check now
+ */
+async function checkRetentionCycleNow() {
+    const btn = document.getElementById('checkRetentionNowBtn');
+    if (!btn) return;
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin text-slate-600"></i><span>Mengecek...</span>`;
+    initLucide();
+
+    try {
+        const res = await fetch('/api/database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'cleanup_monthly' })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            await fetchDatabaseSnapshots();
+            alert(data.message);
+        } else {
+            throw new Error(data.message || 'Gagal mengecek siklus bulanan');
+        }
+    } catch (err) {
+        alert('Gagal mengecek siklus: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        initLucide();
+    }
+}
+
+/**
+ * Force cleanup previous month snapshots immediately (skipping grace period)
+ */
+async function forceCleanupPreviousMonth() {
+    const confirmDelete = confirm('Apakah Anda yakin ingin menghapus semua data snapshot database bulan sebelumnya sekarang tanpa menunggu masa tenggang 2 hari? Data bulan berjalan akan tetap aman.');
+    if (!confirmDelete) return;
+
+    const btn = document.getElementById('forceCleanupPrevMonthBtn');
+    if (!btn) return;
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin text-rose-600"></i><span>Membersihkan...</span>`;
+    initLucide();
+
+    try {
+        const res = await fetch('/api/database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'cleanup_monthly', force: true })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            await fetchDatabaseSnapshots();
+            alert(data.message);
+        } else {
+            throw new Error(data.message || 'Gagal membersihkan data');
+        }
+    } catch (err) {
+        alert('Gagal membersihkan: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        initLucide();
+    }
+}
+
 

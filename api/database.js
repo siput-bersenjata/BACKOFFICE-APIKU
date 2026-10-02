@@ -1,11 +1,12 @@
 const { getSalesDetails, formatDate, extractAuthContext, resequenceOrderNumbers } = require('../lib/olsera');
-const { getPublicConfig, savePublicConfig, saveSnapshot, getSnapshots } = require('../lib/database');
+const { getPublicConfig, savePublicConfig, saveSnapshot, getSnapshots, cleanupOldSnapshots, getRetentionStatus } = require('../lib/database');
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -28,13 +29,62 @@ module.exports = async (req, res) => {
     const action = body?.action || req.query?.action || 'sync_now';
 
     if (action === 'save_config') {
-      const percentage = Number(body?.percentage || req.query?.percentage || 50);
-      const savedConfig = await savePublicConfig({ percentage });
+      const percentage = body?.percentage !== undefined ? Number(body.percentage) : undefined;
+      const monthly_retention = body?.monthly_retention !== undefined ? Boolean(body.monthly_retention) : undefined;
+      const grace_period_days = body?.grace_period_days !== undefined ? Number(body.grace_period_days) : undefined;
+
+      const savedConfig = await savePublicConfig({ percentage, monthly_retention, grace_period_days });
       return res.status(200).json({
         status: 'success',
-        message: `Persentase data API publik berhasil disimpan: ${savedConfig.percentage}%`,
+        message: `Konfigurasi database berhasil disimpan.`,
         config: savedConfig
       });
+    }
+
+    if (action === 'save_retention_config') {
+      const monthly_retention = body?.monthly_retention !== undefined ? Boolean(body.monthly_retention) : true;
+      const grace_period_days = body?.grace_period_days !== undefined ? Math.max(0, Math.min(10, Number(body.grace_period_days))) : 2;
+
+      const savedConfig = await savePublicConfig({ monthly_retention, grace_period_days });
+      const retentionStatus = getRetentionStatus(new Date(), savedConfig.grace_period_days);
+
+      return res.status(200).json({
+        status: 'success',
+        message: `Pengaturan retensi bulanan database berhasil disimpan (Jeda: ${savedConfig.grace_period_days} hari).`,
+        config: savedConfig,
+        retention: retentionStatus
+      });
+    }
+
+    if (action === 'cleanup_monthly') {
+      try {
+        const force = body?.force === true;
+        const result = await cleanupOldSnapshots({ force });
+        const [config, snapshots] = await Promise.all([
+          getPublicConfig(),
+          getSnapshots(30)
+        ]);
+
+        return res.status(200).json({
+          status: 'success',
+          message: force
+            ? `Pembersihan paksa selesai: ${result.purged_count} snapshot bulan lalu telah dihapus.`
+            : (result.purged_count > 0 
+                ? `Pembersihan otomatis selesai: ${result.purged_count} snapshot periode lalu telah dibersihkan.`
+                : 'Pengecekan siklus bulanan selesai: Semua snapshot sudah sesuai periode aktif.'),
+          result,
+          config,
+          retention: getRetentionStatus(new Date(), Number(config.grace_period_days) || 2),
+          total_snapshots: snapshots.length,
+          snapshots
+        });
+      } catch (err) {
+        console.error('[API /api/database cleanup_monthly] Error:', err);
+        return res.status(500).json({
+          status: 'error',
+          message: err.message || 'Gagal menjalankan pembersihan retensi bulanan'
+        });
+      }
     }
 
     if (action === 'sync_now') {
@@ -115,21 +165,25 @@ module.exports = async (req, res) => {
     }
   }
 
-  // GET: Return config and snapshots
+  // GET: Return config, retention status, and snapshots
   try {
     const [config, snapshots] = await Promise.all([
       getPublicConfig(),
-      getSnapshots(20)
+      getSnapshots(30)
     ]);
+
+    const retention = getRetentionStatus(new Date(), Number(config.grace_period_days) || 2);
 
     res.status(200).json({
       status: 'success',
       database: {
         engine: 'Cloud Firestore (Firebase Project: salshya)',
         collection: 'olsera_filtered_snapshots',
-        sync_schedule: 'Setiap 5 Jam Sekali (Otomatis)'
+        sync_schedule: 'Setiap 5 Jam Sekali (Otomatis)',
+        retention_policy: `Siklus Bulanan (Jeda ${config.grace_period_days || 2} Hari)`
       },
       config,
+      retention,
       total_snapshots: snapshots.length,
       snapshots
     });
