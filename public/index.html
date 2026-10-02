@@ -96,9 +96,9 @@
                     <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                     <span id="storeNameText" class="text-xs font-semibold text-slate-700 truncate" title="Nama Toko Aktif">Naiki cafe</span>
                 </div>
-                <button id="switchAccountBtn" class="shrink-0 flex items-center gap-1 px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 hover:text-indigo-700 text-[11px] font-semibold rounded-lg transition-colors border border-indigo-100/60 active:scale-95" title="Ganti Akun Olsera">
-                    <i data-lucide="user-cog" class="w-3.5 h-3.5"></i>
-                    <span>Ganti Akun</span>
+                <button id="switchAccountBtn" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg transition-all shadow-sm shadow-indigo-200 active:scale-95" title="Tambah Akun Olsera Baru">
+                    <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                    <span>Tambah Akun</span>
                 </button>
             </div>
         </div>
@@ -352,6 +352,72 @@
                 </div>
             </div>
 
+            <!-- SECTION: Monitoring Daftar Wajib Pajak (WP) Terdaftar -->
+            <div id="wpMonitoringSection" class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50/70 to-white">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-indigo-200">
+                            <i data-lucide="building-2" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="font-bold text-slate-900 text-base sm:text-lg">Daftar Wajib Pajak (WP) Terdaftar</h3>
+                                <span id="wpTableBadge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">2 WP Terhubung</span>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-0.5">
+                                Pantau omzet & transaksi real vs filter per wajib pajak. <span class="font-semibold text-indigo-600">Klik nama outlet</span> untuk menuju sub-link dashboard masing-masing.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="refreshWpBtn" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors active:scale-95" title="Muat ulang ringkasan WP">
+                            <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+                            <span>Muat Ulang</span>
+                        </button>
+                        <button id="addAccountWpBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-indigo-200 flex items-center gap-2 active:scale-95" title="Tambah Akun WP Baru">
+                            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                            <span>Tambah Akun WP</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Table Content -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50/90 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-100">
+                                <th class="p-4">Nama WP / Outlet</th>
+                                <th class="p-4">Akun Olsera</th>
+                                <th class="p-4 text-center">Total Transaksi Hari Ini</th>
+                                <th class="p-4 text-center">Transaksi Terfilter</th>
+                                <th class="p-4 text-right">Omset Real</th>
+                                <th class="p-4 text-right font-bold text-slate-800">Omset Terfilter</th>
+                                <th class="p-4 text-center">Akses Sub-Link</th>
+                            </tr>
+                        </thead>
+                        <tbody id="wpTableBody" class="text-sm text-slate-700 divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="7" class="p-8 text-center text-slate-400">
+                                    <div class="flex flex-col items-center justify-center gap-2">
+                                        <i data-lucide="loader-2" class="w-6 h-6 animate-spin text-indigo-600"></i>
+                                        <span>Memuat data ringkasan Wajib Pajak dari sistem Olsera...</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Table Footer Hint -->
+                <div class="p-3.5 bg-slate-50/60 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+                    <div class="flex items-center gap-1.5">
+                        <i data-lucide="info" class="w-4 h-4 text-indigo-500 shrink-0"></i>
+                        <span>Klik langsung pada <strong>nama outlet</strong> di atas untuk membuka sub-link dashboard khusus outlet tersebut.</span>
+                    </div>
+                    <span class="text-[11px] font-mono text-slate-400">Database Snapshot: Terisolasi Per Toko</span>
+                </div>
+            </div>
+
             <!-- Recent Transactions Table Section -->
             <div id="tableSection" class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                 <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -584,17 +650,17 @@
 
         </main>
 
-    <!-- Modal: Ganti Akun Olsera -->
+    <!-- Modal: Tambah Akun Olsera & Buat Sub-Link Otomatis -->
     <div id="accountModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
             <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                 <div class="flex items-center gap-2.5">
-                    <div class="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                        <i data-lucide="user-cog" class="w-5 h-5"></i>
+                    <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shadow-indigo-200">
+                        <i data-lucide="user-plus" class="w-5 h-5"></i>
                     </div>
                     <div>
-                        <h4 class="font-bold text-slate-900 text-base">Kelola Akun Olsera</h4>
-                        <p class="text-xs text-slate-500">Ganti akun login atau pilih outlet yang dipantau</p>
+                        <h4 class="font-bold text-slate-900 text-base">Tambah Akun Wajib Pajak (WP)</h4>
+                        <p class="text-xs text-slate-500">Daftarkan akun login Olsera untuk membuat sub-link dashboard & API otomatis</p>
                     </div>
                 </div>
                 <button id="closeAccountModalBtn" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 transition-colors">
@@ -604,9 +670,9 @@
 
             <div class="p-6 space-y-5">
                 <!-- Status Akun Aktif Saat Ini -->
-                <div class="bg-indigo-50/70 border border-indigo-100 rounded-xl p-4">
+                <div class="bg-slate-50 border border-slate-200/80 rounded-xl p-4">
                     <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-indigo-700">Akun Yang Sedang Digunakan</span>
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Akun Yang Sedang Aktif</span>
                         <span id="modalAccountTypeBadge" class="px-2 py-0.5 text-[11px] font-bold rounded-full bg-indigo-600 text-white">Default</span>
                     </div>
                     <div class="flex items-center gap-2 mb-1">
@@ -615,36 +681,47 @@
                     </div>
                     <div class="flex items-center gap-2 text-xs text-slate-600">
                         <i data-lucide="store" class="w-4 h-4 text-indigo-600"></i>
-                        <span>Outlet: <strong id="modalCurrentStore">Naiki cafe</strong></span>
+                        <span>Outlet Aktif: <strong id="modalCurrentStore">Naiki cafe</strong></span>
+                    </div>
+                </div>
+
+                <!-- Info Otomatisasi -->
+                <div class="bg-indigo-50/70 border border-indigo-100 rounded-xl p-3.5 text-xs text-indigo-900 flex items-start gap-2.5">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600 shrink-0 mt-0.5"></i>
+                    <div>
+                        <span class="font-bold">Otomatisasi Sub-Link & Endpoint API</span>
+                        <p class="text-indigo-800/80 text-[11px] mt-0.5">
+                            Saat akun berhasil dihubungkan, sistem akan otomatis membuat <strong>Sub-Link Dashboard</strong> (<code class="bg-indigo-100 px-1 py-0.5 rounded text-indigo-900 font-mono">/outlet/[nama-toko]</code>) dan <strong>Endpoint API Publik</strong> (<code class="bg-indigo-100 px-1 py-0.5 rounded text-indigo-900 font-mono">/api/public/[nama-toko]</code>) secara instan.
+                        </p>
                     </div>
                 </div>
 
                 <!-- Pilih Toko / Outlet (Jika Akun Memiliki Multi-Outlet) -->
                 <div id="outletSelectGroup" class="hidden">
-                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Pilih Outlet / Toko</label>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Pilih Outlet / Toko Aktif</label>
                     <select id="outletSelect" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
                         <!-- Populated dynamically -->
                     </select>
                 </div>
 
-                <!-- Form Ganti Akun Baru -->
+                <!-- Form Tambah Akun Baru -->
                 <form id="accountForm" class="space-y-4">
                     <div class="border-t border-slate-100 pt-4">
                         <h5 class="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                            <i data-lucide="key" class="w-4 h-4 text-indigo-600"></i>
-                            Ganti ke Akun Baru
+                            <i data-lucide="key-round" class="w-4 h-4 text-indigo-600"></i>
+                            Kredensial Akun Olsera Baru
                         </h5>
 
                         <div class="space-y-3">
                             <div>
                                 <label for="inputEmail" class="block text-xs font-medium text-slate-700 mb-1">Email / Username Olsera</label>
-                                <input type="email" id="inputEmail" required placeholder="contoh: owner@resto.com" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                                <input type="email" id="inputEmail" required placeholder="contoh: tanjungapi23@gmail.com" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
                             </div>
 
                             <div>
                                 <label for="inputPassword" class="block text-xs font-medium text-slate-700 mb-1">Password Olsera</label>
                                 <div class="relative">
-                                    <input type="password" id="inputPassword" required placeholder="Masukkan password Olsera" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white pr-10">
+                                    <input type="password" id="inputPassword" required placeholder="Masukkan password akun Olsera" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white pr-10">
                                     <button type="button" id="togglePasswordBtn" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
                                         <i data-lucide="eye" class="w-4 h-4"></i>
                                     </button>
@@ -654,13 +731,36 @@
 
                         <!-- Feedback Message -->
                         <div id="authAlert" class="hidden mt-3 p-3 rounded-lg text-xs"></div>
+
+                        <!-- Success Box: Auto-created Sub-Link & API Result -->
+                        <div id="newAccountSuccessBox" class="hidden mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2.5">
+                            <div class="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+                                <span id="successOutletTitle">Outlet Berhasil Ditambahkan & Dibuatkan Sub-Link!</span>
+                            </div>
+                            <div class="text-[11px] space-y-1.5 text-slate-700 font-mono bg-white p-2.5 rounded-lg border border-emerald-100">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-slate-400">Sub-Link Dashboard:</span>
+                                    <a id="successSubLinkAnchor" href="#" target="_blank" class="font-bold text-indigo-600 hover:underline">/outlet/...</a>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-slate-400">Endpoint API Publik:</span>
+                                    <a id="successApiAnchor" href="#" target="_blank" class="text-emerald-700 hover:underline">/api/public/...</a>
+                                </div>
+                            </div>
+                            <div class="pt-1 flex items-center gap-2">
+                                <a id="successOpenDashboardBtn" href="#" class="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold text-center transition-colors">
+                                    Buka Dashboard Outlet ↗
+                                </a>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Action Buttons -->
                     <div class="pt-2 flex flex-col sm:flex-row gap-2">
-                        <button type="submit" id="saveAccountBtn" class="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-indigo-200 flex items-center justify-center gap-2">
-                            <i data-lucide="log-in" class="w-4 h-4"></i>
-                            <span>Hubungkan & Pakai Akun</span>
+                        <button type="submit" id="saveAccountBtn" class="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-indigo-200 flex items-center justify-center gap-2 active:scale-95">
+                            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                            <span>Tambahkan Akun & Buat Sub-Link</span>
                         </button>
                         <button type="button" id="resetAccountBtn" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5" title="Kembalikan ke akun bawaan Bapenda">
                             <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>

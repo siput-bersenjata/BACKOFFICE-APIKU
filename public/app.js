@@ -57,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initCharts();
     setupEventListeners();
     updateAccountUI();
+    fetchWpSummaryTable();
     fetchOutletsList();
     fetchDashboardData();
     setupAutoRefresh();
@@ -379,10 +380,13 @@ function setupEventListeners() {
     if (refreshOutletsBtn) refreshOutletsBtn.addEventListener('click', fetchOutletsList);
 
     const addOutletBtn = document.getElementById('addOutletBtn');
-    if (addOutletBtn) addOutletBtn.addEventListener('click', () => {
-        const modal = document.getElementById('accountModal');
-        if (modal) modal.classList.remove('hidden');
-    });
+    if (addOutletBtn) addOutletBtn.addEventListener('click', openAccountModal);
+
+    const refreshWpBtn = document.getElementById('refreshWpBtn');
+    if (refreshWpBtn) refreshWpBtn.addEventListener('click', fetchWpSummaryTable);
+
+    const addAccountWpBtn = document.getElementById('addAccountWpBtn');
+    if (addAccountWpBtn) addAccountWpBtn.addEventListener('click', openAccountModal);
 
     // Public API Slider
     const percentageSlider = document.getElementById('percentageSlider');
@@ -906,7 +910,8 @@ async function handleAccountSubmit(e) {
 
         const data = json.data;
         const stores = data.stores || [];
-        const primaryStore = stores[0] || { name: 'Depot TanjungApi', url_id: 'depottanjungapi' };
+        const primaryStore = stores[0] || { name: 'Outlet Baru', url_id: 'outletbaru', slug: 'outletbaru' };
+        const primarySlug = primaryStore.slug || primaryStore.url_id;
 
         // Save new account state
         saveAccount({
@@ -914,20 +919,49 @@ async function handleAccountSubmit(e) {
             username: email,
             password: password,
             token: data.token,
-            storeUrlId: primaryStore.url_id,
+            storeUrlId: primarySlug,
             storeName: primaryStore.name,
             stores: stores,
             name: data.user?.name || email.split('@')[0]
         });
 
-        updatePublicApiUrl(primaryStore.url_id);
-        showAlert(`Berhasil terhubung ke akun ${email}! Memuat outlet ${primaryStore.name}...`, 'success');
+        updatePublicApiUrl(primarySlug);
 
-        // Reset form
+        // Show auto-generated sub-link and endpoint info in success box
+        const successBox = document.getElementById('newAccountSuccessBox');
+        const successTitle = document.getElementById('successOutletTitle');
+        const successSubLinkAnchor = document.getElementById('successSubLinkAnchor');
+        const successApiAnchor = document.getElementById('successApiAnchor');
+        const successOpenDashboardBtn = document.getElementById('successOpenDashboardBtn');
+
+        if (successBox) {
+            if (successTitle) successTitle.innerText = `${primaryStore.name} Berhasil Ditambahkan!`;
+            if (successSubLinkAnchor) {
+                const subLink = primaryStore.sub_link || `/outlet/${primarySlug}`;
+                successSubLinkAnchor.href = subLink;
+                successSubLinkAnchor.innerText = subLink;
+            }
+            if (successApiAnchor) {
+                const apiPath = primaryStore.api_endpoint || `/api/public/${primarySlug}`;
+                const fullApiUrl = `${window.location.origin}${apiPath}`;
+                successApiAnchor.href = fullApiUrl;
+                successApiAnchor.innerText = fullApiUrl;
+            }
+            if (successOpenDashboardBtn) {
+                successOpenDashboardBtn.href = primaryStore.sub_link || `/outlet/${primarySlug}`;
+            }
+            successBox.classList.remove('hidden');
+        }
+
+        showAlert(`Berhasil menambahkan akun ${email}! Sub-link & API publik otomatis aktif untuk ${stores.length} outlet.`, 'success');
+
+        // Reset form inputs
         document.getElementById('inputEmail').value = '';
         document.getElementById('inputPassword').value = '';
 
-        closeAccountModal();
+        // Immediately refresh WP table and Outlets list
+        await fetchWpSummaryTable();
+        await fetchOutletsList();
         await fetchDashboardData();
         await fetchDatabaseSnapshots();
         triggerDatabaseSyncNow();
@@ -950,19 +984,297 @@ function handleResetAccount() {
             isCustom: false,
             username: 'bapendapedua@gmail.com',
             token: null,
-            storeUrlId: 'depottanjungapi',
-            storeName: 'Depot TanjungApi',
+            storeUrlId: 'naikicafe',
+            storeName: 'Naiki cafe',
             stores: []
         });
 
-        updatePublicApiUrl('depottanjungapi');
+        updatePublicApiUrl('naikicafe');
         document.getElementById('inputEmail').value = '';
         document.getElementById('inputPassword').value = '';
+        const successBox = document.getElementById('newAccountSuccessBox');
+        if (successBox) successBox.classList.add('hidden');
         showAlert('Akun dikembalikan ke bawaan Bapenda.', 'success');
 
         closeAccountModal();
         fetchDashboardData();
+        fetchWpSummaryTable();
+        fetchOutletsList();
         fetchDatabaseSnapshots();
+    }
+}
+
+/**
+ * Switch View: Dashboard Realtime vs Outlets List vs Sections
+ */
+function switchView(viewName) {
+    const dashboardView = document.getElementById('dashboardView');
+    const outletsView = document.getElementById('outletsView');
+
+    const navDashboardBtn = document.getElementById('navDashboardBtn');
+    const navTransactionsBtn = document.getElementById('navTransactionsBtn');
+    const navChartsBtn = document.getElementById('navChartsBtn');
+    const navOutletsBtn = document.getElementById('navOutletsBtn');
+
+    [navDashboardBtn, navTransactionsBtn, navChartsBtn, navOutletsBtn].forEach(btn => {
+        if (!btn) return;
+        btn.classList.remove('bg-indigo-50', 'text-indigo-600');
+        btn.classList.add('text-slate-600', 'hover:bg-slate-50', 'hover:text-slate-900');
+    });
+
+    if (viewName === 'outlets') {
+        if (dashboardView) dashboardView.classList.add('hidden');
+        if (outletsView) outletsView.classList.remove('hidden');
+        if (navOutletsBtn) {
+            navOutletsBtn.classList.add('bg-indigo-50', 'text-indigo-600');
+            navOutletsBtn.classList.remove('text-slate-600', 'hover:bg-slate-50', 'hover:text-slate-900');
+        }
+        fetchOutletsList();
+    } else {
+        if (outletsView) outletsView.classList.add('hidden');
+        if (dashboardView) dashboardView.classList.remove('hidden');
+
+        if (viewName === 'transactions') {
+            if (navTransactionsBtn) {
+                navTransactionsBtn.classList.add('bg-indigo-50', 'text-indigo-600');
+                navTransactionsBtn.classList.remove('text-slate-600');
+            }
+            const tableSec = document.getElementById('tableSection');
+            if (tableSec) tableSec.scrollIntoView({ behavior: 'smooth' });
+        } else if (viewName === 'charts') {
+            if (navChartsBtn) {
+                navChartsBtn.classList.add('bg-indigo-50', 'text-indigo-600');
+                navChartsBtn.classList.remove('text-slate-600');
+            }
+            const chartSec = document.getElementById('chartsSection');
+            if (chartSec) chartSec.scrollIntoView({ behavior: 'smooth' });
+        } else {
+            if (navDashboardBtn) {
+                navDashboardBtn.classList.add('bg-indigo-50', 'text-indigo-600');
+                navDashboardBtn.classList.remove('text-slate-600');
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+}
+
+/**
+ * Fetch and render Wajib Pajak (WP) Monitoring Table on Main Dashboard
+ */
+async function fetchWpSummaryTable() {
+    const tbody = document.getElementById('wpTableBody');
+    const badge = document.getElementById('wpTableBadge');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch('/api/database?action=wp_summary');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const summary = json.summary || [];
+
+        if (badge) {
+            badge.innerText = `${summary.length} WP Terdaftar`;
+        }
+        const navBadge = document.getElementById('navOutletsCountBadge');
+        if (navBadge) {
+            navBadge.innerText = `${summary.length} Outlet`;
+        }
+
+        if (summary.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="p-8 text-center text-slate-400">
+                        Belum ada data Wajib Pajak terdaftar. Klik <strong>Tambah Akun WP</strong> untuk mendaftarkan akun Olsera baru.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = summary.map(wp => {
+            const subLink = wp.sub_link || `/outlet/${wp.slug}`;
+            const apiEndpoint = wp.api_endpoint || `/api/public/${wp.slug}`;
+            const pct = wp.percentage || 50;
+
+            return `
+                <tr class="hover:bg-indigo-50/40 transition-colors">
+                    <!-- Nama WP / Outlet (Ketika di-klik langsung menuju sub-link masing-masing) -->
+                    <td class="p-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-indigo-100">
+                                <i data-lucide="store" class="w-5 h-5"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <a href="${subLink}" class="font-bold text-slate-900 hover:text-indigo-600 transition-colors flex items-center gap-1.5 group text-sm sm:text-base leading-snug" title="Buka Sub-Link Dashboard ${wp.name}">
+                                    <span class="truncate">${wp.name}</span>
+                                    <i data-lucide="arrow-up-right" class="w-4 h-4 text-indigo-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0"></i>
+                                </a>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <a href="${subLink}" class="text-[11px] font-mono text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded font-semibold transition-colors">
+                                        ${subLink}
+                                    </a>
+                                    <span class="inline-flex items-center text-[11px] text-emerald-600 font-semibold">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 pulse-live"></span>Aktif
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+
+                    <!-- Akun Olsera -->
+                    <td class="p-4">
+                        <div class="flex items-center gap-1.5 text-xs text-slate-600">
+                            <i data-lucide="mail" class="w-3.5 h-3.5 text-slate-400 shrink-0"></i>
+                            <span class="font-mono truncate max-w-[150px]">${wp.username || '-'}</span>
+                        </div>
+                    </td>
+
+                    <!-- Total Transaksi Hari Ini (Real) -->
+                    <td class="p-4 text-center">
+                        <span class="font-extrabold text-slate-900 text-base">${wp.total_real_transactions}</span>
+                        <span class="text-xs text-slate-400 block font-medium">Transaksi</span>
+                    </td>
+
+                    <!-- Transaksi Terfilter -->
+                    <td class="p-4 text-center">
+                        <div class="inline-flex flex-col items-center">
+                            <div class="flex items-center gap-1">
+                                <span class="font-extrabold text-indigo-600 text-base">${wp.filtered_transactions_count}</span>
+                                <span class="text-xs text-slate-400 font-medium">Tx</span>
+                            </div>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100/60 mt-0.5">Filter ${pct}%</span>
+                        </div>
+                    </td>
+
+                    <!-- Omset Real -->
+                    <td class="p-4 text-right">
+                        <span class="font-bold text-slate-800 text-sm">${wp.formatted_real_revenue}</span>
+                        <span class="text-[11px] text-slate-400 block font-normal">Real Olsera</span>
+                    </td>
+
+                    <!-- Omset Terfilter -->
+                    <td class="p-4 text-right">
+                        <span class="font-extrabold text-emerald-600 text-sm">${wp.formatted_filtered_revenue}</span>
+                        <span class="text-[11px] text-emerald-600/70 block font-semibold">Omset Publik</span>
+                    </td>
+
+                    <!-- Akses Sub-Link & API -->
+                    <td class="p-4 text-center">
+                        <div class="flex items-center justify-center gap-2">
+                            <a href="${subLink}" class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-indigo-200 flex items-center gap-1.5 active:scale-95" title="Buka Dashboard Outlet ${wp.name}">
+                                <span>Buka Dashboard</span>
+                                <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                            </a>
+                            <a href="${apiEndpoint}" target="_blank" class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-medium transition-colors" title="Lihat JSON API Publik">
+                                API
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        initLucide();
+    } catch (err) {
+        console.error('WP summary fetch error:', err);
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="p-6 text-center text-rose-500 text-xs">
+                    Gagal memuat ringkasan Wajib Pajak: ${err.message}.
+                    <button onclick="fetchWpSummaryTable()" class="ml-2 underline font-bold hover:text-rose-700">Coba Lagi</button>
+                </td>
+            </tr>
+        `;
+    }
+}
+
+/**
+ * Fetch and render Outlets List view
+ */
+async function fetchOutletsList() {
+    const container = document.getElementById('outletsGrid');
+    const navBadge = document.getElementById('navOutletsCountBadge');
+
+    try {
+        const res = await fetch('/api/database?action=list_outlets');
+        if (!res.ok) return;
+        const data = await res.json();
+        const outlets = data.outlets || [];
+
+        if (navBadge) {
+            navBadge.innerText = `${outlets.length} Outlet`;
+        }
+
+        if (container && outlets.length > 0) {
+            container.innerHTML = outlets.map(o => `
+                <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-5 group">
+                    <div>
+                        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold shadow-sm shadow-indigo-200">
+                                    <i data-lucide="store" class="w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-slate-900 text-base group-hover:text-indigo-600 transition-colors">${o.name}</h3>
+                                    <p class="text-xs text-slate-400">Akun: ${o.username || '-'}</p>
+                                </div>
+                            </div>
+                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-live"></span>
+                                Aktif
+                            </span>
+                        </div>
+
+                        <!-- Sub-Link Box -->
+                        <div class="mt-4 bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1.5">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Sub-Link Dashboard Outlet:</span>
+                            <div class="flex items-center justify-between gap-2">
+                                <a href="${o.sub_link}" class="text-xs font-mono font-bold text-indigo-600 hover:text-indigo-800 truncate select-all underline">
+                                    ${o.sub_link}
+                                </a>
+                                <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-semibold shrink-0">Sub-Link</span>
+                            </div>
+                        </div>
+
+                        <!-- Public API Endpoint Box -->
+                        <div class="mt-3 bg-slate-900 p-3.5 rounded-xl text-slate-100 space-y-2">
+                            <div class="flex items-center justify-between text-[11px]">
+                                <span class="text-slate-400 font-mono">Endpoint API Publik:</span>
+                                <span class="text-emerald-400 font-mono text-[10px]">GET ${o.api_endpoint}</span>
+                            </div>
+                            <div class="font-mono text-xs text-emerald-400 truncate select-all bg-slate-950 p-2 rounded border border-slate-800">
+                                ${window.location.origin}${o.api_endpoint}
+                            </div>
+                        </div>
+
+                        <!-- Ratio & Info -->
+                        <div class="mt-3 flex items-center justify-between text-xs text-slate-600 px-1">
+                            <span>Status Filter Publik:</span>
+                            <span class="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">Rasio ${o.percentage || 50}%</span>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="pt-2 border-t border-slate-100 flex items-center gap-2">
+                        <a href="${o.sub_link}" class="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-indigo-200 flex items-center justify-center gap-1.5 active:scale-95">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                            <span>Buka Dashboard Outlet</span>
+                        </a>
+                        <a href="${o.preview_endpoint || (`/preview.html?resto=${o.slug}`)}" target="_blank" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1" title="Lihat Tabel Preview">
+                            <i data-lucide="table" class="w-3.5 h-3.5"></i>
+                            <span>Tabel</span>
+                        </a>
+                        <a href="${o.api_endpoint}" target="_blank" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1" title="Buka JSON Publik">
+                            <i data-lucide="code" class="w-3.5 h-3.5"></i>
+                            <span>JSON</span>
+                        </a>
+                    </div>
+                </div>
+            `).join('');
+            initLucide();
+        }
+    } catch (err) {
+        console.warn('[Outlets List] Error fetching outlets:', err.message);
     }
 }
 

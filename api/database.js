@@ -11,6 +11,7 @@ const {
   getOutletConfig,
   saveOutletConfig
 } = require('../lib/database');
+const { computePublicTransactions } = require('./public');
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -47,6 +48,58 @@ module.exports = async (req, res) => {
       return res.status(200).json({
         status: 'success',
         outlets
+      });
+    }
+
+    if (action === 'wp_summary') {
+      const outlets = await getRegisteredOutlets();
+      const todayStr = body?.date || req.query?.date || formatDate(new Date());
+
+      const summary = await Promise.all(outlets.map(async (o) => {
+        try {
+          const resPub = await computePublicTransactions(o.slug, { date: todayStr });
+          return {
+            slug: o.slug,
+            name: o.name,
+            username: o.username,
+            percentage: resPub.percentage,
+            sub_link: o.sub_link,
+            api_endpoint: o.api_endpoint,
+            preview_endpoint: o.preview_endpoint,
+            total_real_transactions: resPub.totalReal || 0,
+            filtered_transactions_count: resPub.filteredCount || 0,
+            real_revenue: resPub.realRevenue || 0,
+            formatted_real_revenue: resPub.formattedRealRevenue || 'Rp 0',
+            filtered_revenue: resPub.filteredRevenue || 0,
+            formatted_filtered_revenue: resPub.formattedFilteredRevenue || 'Rp 0',
+            status: 'Aktif'
+          };
+        } catch (err) {
+          console.warn(`[wp_summary] Outlet ${o.slug} error:`, err.message);
+          return {
+            slug: o.slug,
+            name: o.name,
+            username: o.username,
+            percentage: o.percentage || 50,
+            sub_link: o.sub_link,
+            api_endpoint: o.api_endpoint,
+            preview_endpoint: o.preview_endpoint,
+            total_real_transactions: 0,
+            filtered_transactions_count: 0,
+            real_revenue: 0,
+            formatted_real_revenue: 'Rp 0',
+            filtered_revenue: 0,
+            formatted_filtered_revenue: 'Rp 0',
+            status: 'Perlu Cek Login'
+          };
+        }
+      }));
+
+      return res.status(200).json({
+        status: 'success',
+        date: todayStr,
+        total_outlets: summary.length,
+        summary
       });
     }
 
@@ -297,6 +350,58 @@ module.exports = async (req, res) => {
       return res.status(200).json({
         status: 'success',
         outlets
+      });
+    }
+
+    if (req.query?.action === 'wp_summary') {
+      const outlets = await getRegisteredOutlets();
+      const todayStr = req.query?.date || formatDate(new Date());
+
+      const summary = await Promise.all(outlets.map(async (o) => {
+        try {
+          const resPub = await computePublicTransactions(o.slug, { date: todayStr });
+          return {
+            slug: o.slug,
+            name: o.name,
+            username: o.username,
+            percentage: resPub.percentage,
+            sub_link: o.sub_link,
+            api_endpoint: o.api_endpoint,
+            preview_endpoint: o.preview_endpoint,
+            total_real_transactions: resPub.totalReal || 0,
+            filtered_transactions_count: resPub.filteredCount || 0,
+            real_revenue: resPub.realRevenue || 0,
+            formatted_real_revenue: resPub.formattedRealRevenue || 'Rp 0',
+            filtered_revenue: resPub.filteredRevenue || 0,
+            formatted_filtered_revenue: resPub.formattedFilteredRevenue || 'Rp 0',
+            status: 'Aktif'
+          };
+        } catch (err) {
+          console.warn(`[wp_summary] Outlet ${o.slug} error:`, err.message);
+          return {
+            slug: o.slug,
+            name: o.name,
+            username: o.username,
+            percentage: o.percentage || 50,
+            sub_link: o.sub_link,
+            api_endpoint: o.api_endpoint,
+            preview_endpoint: o.preview_endpoint,
+            total_real_transactions: 0,
+            filtered_transactions_count: 0,
+            real_revenue: 0,
+            formatted_real_revenue: 'Rp 0',
+            filtered_revenue: 0,
+            formatted_filtered_revenue: 'Rp 0',
+            status: 'Perlu Cek Login'
+          };
+        }
+      }));
+
+      return res.status(200).json({
+        status: 'success',
+        date: todayStr,
+        total_outlets: summary.length,
+        summary
       });
     }
 
