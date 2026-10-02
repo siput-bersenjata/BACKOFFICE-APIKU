@@ -58,7 +58,11 @@ async function handleRequest(req, res) {
     return syncHandler(req, res);
   } else if (pathname === '/api/auth') {
     return authHandler(req, res);
-  } else if (pathname === '/api/public') {
+  } else if (pathname === '/api/public' || pathname.startsWith('/api/public/')) {
+    const parts = pathname.split('/');
+    if (parts.length > 3 && parts[3]) {
+      req.query.resto = parts[3];
+    }
     return publicHandler(req, res);
   } else if (pathname === '/api/database') {
     return databaseHandler(req, res);

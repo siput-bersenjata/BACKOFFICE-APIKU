@@ -1,4 +1,4 @@
-const { getSalesDetails, formatDate, formatRupiah, extractAuthContext, resequenceOrderNumbers, getStoreInfo } = require('../lib/olsera');
+const { getSalesDetails, formatDate, formatRupiah, extractAuthContext, resequenceOrderNumbers } = require('../lib/olsera');
 const { getPublicConfig, saveSnapshot, shouldRun5HourSync } = require('../lib/database');
 
 module.exports = async (req, res) => {
@@ -18,7 +18,16 @@ module.exports = async (req, res) => {
     // 1. Strict constraint: ONLY TODAY'S DATE (WIB)
     const todayStr = formatDate(new Date());
 
-    // 2. Determine percentage & store configuration from database or request
+    // Extract resto / outlet name if accessed via /api/public/:resto (e.g. /api/public/naikiresto)
+    let restoSlug = req.query?.resto;
+    if (!restoSlug && req.url) {
+      const match = req.url.split('?')[0].match(/\/api\/public\/([^/?#]+)/);
+      if (match) {
+        restoSlug = decodeURIComponent(match[1]);
+      }
+    }
+
+    // 2. Determine percentage: Query param or saved database config
     const config = await getPublicConfig();
     let percentage = config.percentage || 50;
 
@@ -29,27 +38,10 @@ module.exports = async (req, res) => {
       }
     }
 
-    const headerAuthContext = extractAuthContext(req);
-    // Combine header auth with saved database config for public requests
-    const effectiveAuthContext = {
-      token: headerAuthContext.token || config.token || null,
-      storeUrlId: req.query.store || headerAuthContext.storeUrlId || config.store_url_id || 'naikicafe',
-      username: headerAuthContext.username || config.username || null,
-      password: headerAuthContext.password || config.password || null
-    };
+    const authContext = extractAuthContext(req);
 
-    // 3. Resolve active restaurant / store name dynamically
-    let storeInfo = null;
-    try {
-      storeInfo = await getStoreInfo(effectiveAuthContext);
-    } catch (e) {
-      console.warn('[Public API] getStoreInfo warning:', e.message);
-    }
-    const restaurantName = (storeInfo && storeInfo.name) || config.store_name || effectiveAuthContext.storeUrlId || 'Naiki cafe';
-    const storeUrlId = (storeInfo && storeInfo.url_id) || effectiveAuthContext.storeUrlId || 'naikicafe';
-
-    // 4. Fetch today's transactions (fetch up to 500 items for today across pages)
-    const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, effectiveAuthContext);
+    // 3. Fetch today's transactions (fetch up to 500 items for today across pages)
+    const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
     let allTx = page1.data || [];
 
     // If more than 100 items exist, fetch subsequent pages in parallel
@@ -57,7 +49,7 @@ module.exports = async (req, res) => {
       try {
         const remainingPages = [];
         for (let p = 2; p <= Math.min(page1.meta.last_page, 5); p++) {
-          remainingPages.push(getSalesDetails(todayStr, todayStr, p, 100, effectiveAuthContext));
+          remainingPages.push(getSalesDetails(todayStr, todayStr, p, 100, authContext));
         }
         const results = await Promise.all(remainingPages);
         results.forEach(res => {
@@ -72,7 +64,7 @@ module.exports = async (req, res) => {
 
     const totalReal = allTx.length;
 
-    // 5. Filter by percentage
+    // 4. Filter by percentage
     // Calculate how many transactions to include
     const targetCount = totalReal === 0 ? 0 : Math.max(1, Math.min(totalReal, Math.round(totalReal * (percentage / 100))));
 
@@ -110,14 +102,7 @@ module.exports = async (req, res) => {
     // Resequence order numbers so there are no gaps/jumps
     filtered = resequenceOrderNumbers(filtered);
 
-    // Attach restaurant name to each transaction in data
-    filtered = filtered.map(tx => ({
-      ...tx,
-      restaurant_name: restaurantName,
-      store_name: restaurantName
-    }));
-
-    // 6. Calculate totals for real and filtered datasets
+    // 5. Calculate totals for real and filtered datasets
     let realRevenue = 0;
     let realTax = 0;
     allTx.forEach(tx => {
@@ -133,10 +118,9 @@ module.exports = async (req, res) => {
       filteredTax += Number(tx.tax) || 0;
     });
 
-    // 7. Check if 5-hour database snapshot is due
+    // 6. Check if 5-hour database snapshot is due
     if (await shouldRun5HourSync()) {
       saveSnapshot({
-        store_name: restaurantName,
         date: todayStr,
         percentage,
         total_real_transactions: totalReal,
@@ -150,13 +134,9 @@ module.exports = async (req, res) => {
     res.status(200).json({
       status: 'success',
       api_name: 'Olsera POS Public Transaction API',
-      restaurant_name: restaurantName,
-      store_name: restaurantName,
-      store_url_id: storeUrlId,
+      store: restoSlug || 'naikiresto',
       timestamp: new Date().toISOString(),
       filter: {
-        restaurant_name: restaurantName,
-        store_name: restaurantName,
         date: todayStr,
         total_real_transactions: totalReal,
         filtered_transactions_count: filtered.length,
