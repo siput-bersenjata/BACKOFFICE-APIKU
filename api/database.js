@@ -87,13 +87,46 @@ module.exports = async (req, res) => {
       }
     }
 
+    if (action === 'save_active_account') {
+      try {
+        const account = body?.account;
+        if (!account) {
+          return res.status(400).json({ status: 'error', message: 'Data akun restoran wajib diisi' });
+        }
+        const updatedConfig = await savePublicConfig({ active_account: account });
+        return res.status(200).json({
+          status: 'success',
+          message: 'Akun restoran aktif berhasil disimpan ke database!',
+          config: updatedConfig
+        });
+      } catch (err) {
+        console.error('[API /api/database save_active_account] Error:', err);
+        return res.status(500).json({
+          status: 'error',
+          message: err.message || 'Gagal menyimpan akun restoran aktif'
+        });
+      }
+    }
+
     if (action === 'sync_now') {
       try {
-        const todayStr = formatDate(new Date());
+        const todayStr = body?.date || formatDate(new Date());
         const config = await getPublicConfig();
         const percentage = body?.percentage ? Number(body.percentage) : config.percentage;
 
-        const authContext = extractAuthContext(req);
+        let authContext = extractAuthContext(req);
+        if (!authContext.username && !authContext.token && config.active_account) {
+          authContext = {
+            username: config.active_account.username,
+            password: config.active_account.password,
+            token: config.active_account.token,
+            storeUrlId: config.active_account.store_url_id || config.active_account.storeUrlId
+          };
+        }
+
+        const storeUrlId = authContext.storeUrlId || config.active_account?.store_url_id || 'depottanjungapi';
+        const storeName = config.active_account?.store_name || (storeUrlId === 'depottanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
+
         const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
         let allTx = page1.data || [];
 
@@ -142,6 +175,8 @@ module.exports = async (req, res) => {
 
         const newSnapshot = await saveSnapshot({
           date: todayStr,
+          store_url_id: storeUrlId,
+          store_name: storeName,
           percentage,
           total_real_transactions: totalReal,
           saved_count: filtered.length,

@@ -47,6 +47,8 @@ function saveAccount(acc) {
         localStorage.removeItem(STORAGE_KEY);
     }
     updateAccountUI();
+    updatePublicApiUrl();
+    syncActiveAccountToDatabase(acc);
 }
 
 // Initialize when DOM is ready
@@ -59,6 +61,11 @@ document.addEventListener('DOMContentLoaded', () => {
     calculateLiveSimulation();
     fetchDashboardData();
     setupAutoRefresh();
+
+    // If active account exists in localStorage, sync it to database
+    if (activeAccount && activeAccount.isCustom && activeAccount.username) {
+        syncActiveAccountToDatabase(activeAccount);
+    }
 });
 
 function initLucide() {
@@ -341,12 +348,18 @@ function setupEventListeners() {
 
     // Outlet selector change
     const outletSelect = document.getElementById('outletSelect');
-    outletSelect.addEventListener('change', (e) => {
+    outletSelect.addEventListener('change', async (e) => {
         if (e.target.value) {
             activeAccount.storeUrlId = e.target.value;
+            const foundStore = (activeAccount.stores || []).find(s => s.url_id === e.target.value);
+            if (foundStore) {
+                activeAccount.storeName = foundStore.name;
+            }
             saveAccount(activeAccount);
             closeAccountModal();
-            fetchDashboardData();
+            await fetchDashboardData();
+            await fetchDatabaseSnapshots();
+            triggerDatabaseSyncNow();
         }
     });
 
@@ -520,12 +533,18 @@ function applyDashboardData(data) {
 
     // Store Info
     if (data.store) {
-        const name = data.store.name || 'Naiki cafe';
+        const name = data.store.name || 'Depot TanjungApi';
         document.getElementById('storeNameText').innerText = name;
         document.getElementById('storeNameText').title = name;
         document.getElementById('outletBadge').innerText = name;
         document.getElementById('headerStoreName').innerText = name;
         document.getElementById('userRoleBadge').innerText = data.store.role || 'Perpajakan (PJ)';
+
+        if (data.store.url_id) {
+            activeAccount.storeUrlId = data.store.url_id;
+            activeAccount.storeName = name;
+            updatePublicApiUrl(data.store.url_id);
+        }
     }
 
     // Account Info
@@ -879,7 +898,7 @@ async function handleAccountSubmit(e) {
 
         const data = json.data;
         const stores = data.stores || [];
-        const primaryStore = stores[0] || { name: 'Outlet Olsera', url_id: 'naikicafe' };
+        const primaryStore = stores[0] || { name: 'Depot TanjungApi', url_id: 'depottanjungapi' };
 
         // Save new account state
         saveAccount({
@@ -893,16 +912,17 @@ async function handleAccountSubmit(e) {
             name: data.user?.name || email.split('@')[0]
         });
 
+        updatePublicApiUrl(primaryStore.url_id);
         showAlert(`Berhasil terhubung ke akun ${email}! Memuat outlet ${primaryStore.name}...`, 'success');
 
         // Reset form
         document.getElementById('inputEmail').value = '';
         document.getElementById('inputPassword').value = '';
 
-        setTimeout(() => {
-            closeAccountModal();
-            fetchDashboardData();
-        }, 1200);
+        closeAccountModal();
+        await fetchDashboardData();
+        await fetchDatabaseSnapshots();
+        triggerDatabaseSyncNow();
 
     } catch (err) {
         showAlert(err.message || 'Terjadi kesalahan saat menghubungkan akun.');
@@ -922,18 +942,19 @@ function handleResetAccount() {
             isCustom: false,
             username: 'bapendapedua@gmail.com',
             token: null,
-            storeUrlId: 'naikicafe',
+            storeUrlId: 'depottanjungapi',
+            storeName: 'Depot TanjungApi',
             stores: []
         });
 
+        updatePublicApiUrl('depottanjungapi');
         document.getElementById('inputEmail').value = '';
         document.getElementById('inputPassword').value = '';
         showAlert('Akun dikembalikan ke bawaan Bapenda.', 'success');
 
-        setTimeout(() => {
-            closeAccountModal();
-            fetchDashboardData();
-        }, 800);
+        closeAccountModal();
+        fetchDashboardData();
+        fetchDatabaseSnapshots();
     }
 }
 
@@ -1182,29 +1203,83 @@ function calculateLiveSimulation() {
 }
 
 /**
- * Update Public API URL displayed on page
- * Uses the restaurant endpoint /api/public/naikiresto
+ * Helper to get active store slug (e.g. 'depottanjungapi')
  */
-function updatePublicApiUrl() {
-    const origin = window.location.origin;
-    const url = `${origin}/api/public/naikiresto`;
-    const textEl = document.getElementById('publicApiUrlText');
-    const openBtn = document.getElementById('openApiUrlBtn');
-    const previewBtn = document.getElementById('openPreviewPageBtn');
-    if (textEl) textEl.innerText = url;
-    if (openBtn) openBtn.href = url;
-    if (previewBtn) previewBtn.href = `/preview.html`;
+function getActiveStoreSlug() {
+    if (activeAccount && activeAccount.storeUrlId) {
+        return activeAccount.storeUrlId.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    }
+    if (dashboardData && dashboardData.store && dashboardData.store.url_id) {
+        return dashboardData.store.url_id.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    }
+    if (dashboardData && dashboardData.store && dashboardData.store.name) {
+        return dashboardData.store.name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    }
+    if (activeAccount && activeAccount.storeName) {
+        return activeAccount.storeName.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    }
+    return 'depottanjungapi';
 }
 
 /**
- * Setup Copy URL to clipboard button (copies the clean resto endpoint)
+ * Sync active account and store credentials to database (Cloud Firestore)
+ */
+async function syncActiveAccountToDatabase(acc) {
+    if (!acc) return;
+    try {
+        const slug = getActiveStoreSlug();
+        await fetch('/api/database', {
+            method: 'POST',
+            headers: {
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: 'save_active_account',
+                account: {
+                    username: acc.username,
+                    password: acc.password,
+                    token: acc.token,
+                    store_url_id: acc.storeUrlId || slug,
+                    store_name: acc.storeName || acc.name || (dashboardData?.store?.name) || 'Depot TanjungApi',
+                    is_custom: !!acc.isCustom
+                }
+            })
+        });
+    } catch (e) {
+        console.warn('[Sync Account] Failed to sync account to database:', e.message);
+    }
+}
+
+/**
+ * Update Public API URL displayed on page
+ * Dynamically uses the active restaurant slug (e.g. /api/public/depottanjungapi)
+ */
+function updatePublicApiUrl(customSlug = null) {
+    const slug = customSlug ? customSlug.toLowerCase().replace(/[^a-z0-9_-]/g, '') : getActiveStoreSlug();
+    const origin = window.location.origin;
+    const url = `${origin}/api/public/${slug}`;
+    const textEl = document.getElementById('publicApiUrlText');
+    const openBtn = document.getElementById('openApiUrlBtn');
+    const badgeEl = document.getElementById('publicApiMethodBadge');
+    const previewBtn = document.getElementById('openPreviewPageBtn');
+
+    if (textEl) textEl.innerText = url;
+    if (openBtn) openBtn.href = `/api/public/${slug}`;
+    if (badgeEl) badgeEl.innerText = `GET /api/public/${slug}`;
+    if (previewBtn) previewBtn.href = `/preview.html?resto=${encodeURIComponent(slug)}`;
+}
+
+/**
+ * Setup Copy URL to clipboard button (copies the clean dynamic resto endpoint)
  */
 function setupCopyUrlButton() {
     const copyBtn = document.getElementById('copyApiUrlBtn');
     if (copyBtn) {
         copyBtn.addEventListener('click', () => {
+            const slug = getActiveStoreSlug();
             const origin = window.location.origin;
-            const url = `${origin}/api/public/naikiresto`;
+            const url = `${origin}/api/public/${slug}`;
             navigator.clipboard.writeText(url).then(() => {
                 const txt = document.getElementById('copyBtnText');
                 if (txt) {

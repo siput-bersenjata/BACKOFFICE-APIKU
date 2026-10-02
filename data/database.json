@@ -1,7 +1,23 @@
 {
   "config": {
-    "percentage": 40,
-    "updated_at": "2026-10-01T08:59:12.287Z"
+    "percentage": 46,
+    "monthly_retention": true,
+    "grace_period_days": 2,
+    "active_account": {
+      "username": "tanjungapi23@gmail.com",
+      "store_url_id": "depottanjungapi",
+      "store_name": "Depot TanjungApi",
+      "is_custom": true
+    },
+    "accounts": {
+      "depottanjungapi": {
+        "username": "tanjungapi23@gmail.com",
+        "store_url_id": "depottanjungapi",
+        "store_name": "Depot TanjungApi",
+        "is_custom": true
+      }
+    },
+    "updated_at": "2026-10-02T08:32:13.935Z"
   },
   "snapshots": [
     {

@@ -1,5 +1,5 @@
 const { getSalesDetails, formatDate, formatRupiah, extractAuthContext, resequenceOrderNumbers } = require('../lib/olsera');
-const { getPublicConfig, saveSnapshot, shouldRun5HourSync } = require('../lib/database');
+const { getPublicConfig, saveSnapshot, shouldRun5HourSync, getSnapshots } = require('../lib/database');
 
 module.exports = async (req, res) => {
   // CORS Headers for public access
@@ -15,16 +15,19 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // 1. Strict constraint: ONLY TODAY'S DATE (WIB)
-    const todayStr = formatDate(new Date());
+    // 1. Strict constraint: TODAY'S DATE (WIB) by default, or query param date if specified
+    const todayStr = req.query?.date || formatDate(new Date());
 
-    // Extract resto / outlet name if accessed via /api/public/:resto (e.g. /api/public/naikiresto)
+    // Extract resto / outlet name if accessed via /api/public/:resto (e.g. /api/public/depottanjungapi)
     let restoSlug = req.query?.resto;
     if (!restoSlug && req.url) {
       const match = req.url.split('?')[0].match(/\/api\/public\/([^/?#]+)/);
       if (match) {
         restoSlug = decodeURIComponent(match[1]);
       }
+    }
+    if (restoSlug) {
+      restoSlug = restoSlug.toLowerCase().replace(/[^a-z0-9_-]/g, '');
     }
 
     // 2. Determine percentage: Query param or saved database config
@@ -38,27 +41,65 @@ module.exports = async (req, res) => {
       }
     }
 
-    const authContext = extractAuthContext(req);
+    let authContext = extractAuthContext(req);
+
+    // Resolve credentials: if caller didn't supply auth headers, use matched store account or active account
+    if (!authContext.username && !authContext.token) {
+      const matchedAccount = (config.accounts && restoSlug && config.accounts[restoSlug])
+        || (config.active_account && (!restoSlug || restoSlug === (config.active_account.store_url_id || config.active_account.storeUrlId)?.toLowerCase()) ? config.active_account : null)
+        || config.active_account;
+
+      if (matchedAccount && (matchedAccount.username || matchedAccount.token)) {
+        authContext = {
+          token: matchedAccount.token || null,
+          username: matchedAccount.username || null,
+          password: matchedAccount.password || null,
+          storeUrlId: restoSlug || matchedAccount.store_url_id || matchedAccount.storeUrlId
+        };
+      } else if (restoSlug) {
+        authContext.storeUrlId = restoSlug;
+      }
+    } else if (restoSlug && !authContext.storeUrlId) {
+      authContext.storeUrlId = restoSlug;
+    }
+
+    const effectiveStore = restoSlug || authContext.storeUrlId || config.active_account?.store_url_id || 'depottanjungapi';
 
     // 3. Fetch today's transactions (fetch up to 500 items for today across pages)
-    const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
-    let allTx = page1.data || [];
+    let allTx = [];
+    try {
+      const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
+      allTx = page1.data || [];
 
-    // If more than 100 items exist, fetch subsequent pages in parallel
-    if (page1.meta && page1.meta.last_page > 1) {
-      try {
-        const remainingPages = [];
-        for (let p = 2; p <= Math.min(page1.meta.last_page, 5); p++) {
-          remainingPages.push(getSalesDetails(todayStr, todayStr, p, 100, authContext));
-        }
-        const results = await Promise.all(remainingPages);
-        results.forEach(res => {
-          if (res && res.data && Array.isArray(res.data)) {
-            allTx = allTx.concat(res.data);
+      // If more than 100 items exist, fetch subsequent pages in parallel
+      if (page1.meta && page1.meta.last_page > 1) {
+        try {
+          const remainingPages = [];
+          for (let p = 2; p <= Math.min(page1.meta.last_page, 5); p++) {
+            remainingPages.push(getSalesDetails(todayStr, todayStr, p, 100, authContext));
           }
-        });
-      } catch (e) {
-        console.warn('[Public API] Error fetching additional pages:', e.message);
+          const results = await Promise.all(remainingPages);
+          results.forEach(res => {
+            if (res && res.data && Array.isArray(res.data)) {
+              allTx = allTx.concat(res.data);
+            }
+          });
+        } catch (e) {
+          console.warn('[Public API] Error fetching additional pages:', e.message);
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('[Public API] Live fetch warning:', fetchErr.message);
+      // Fallback: check database snapshot for this store
+      try {
+        const snaps = await getSnapshots(15);
+        const match = snaps.find(s => s.date === todayStr && (!s.store_url_id || s.store_url_id === effectiveStore))
+          || snaps.find(s => !s.store_url_id || s.store_url_id === effectiveStore);
+        if (match && match.transactions) {
+          allTx = match.transactions;
+        }
+      } catch (dbErr) {
+        console.warn('[Public API] Snapshot fallback warning:', dbErr.message);
       }
     }
 
@@ -120,8 +161,11 @@ module.exports = async (req, res) => {
 
     // 6. Check if 5-hour database snapshot is due
     if (await shouldRun5HourSync()) {
+      const storeName = config.active_account?.store_name || (effectiveStore === 'depottanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
       saveSnapshot({
         date: todayStr,
+        store_url_id: effectiveStore,
+        store_name: storeName,
         percentage,
         total_real_transactions: totalReal,
         saved_count: filtered.length,
@@ -134,7 +178,7 @@ module.exports = async (req, res) => {
     res.status(200).json({
       status: 'success',
       api_name: 'Olsera POS Public Transaction API',
-      store: restoSlug || 'naikiresto',
+      store: effectiveStore,
       timestamp: new Date().toISOString(),
       filter: {
         date: todayStr,

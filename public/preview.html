@@ -161,6 +161,7 @@
         async function init() {
             const urlParams = new URLSearchParams(window.location.search);
             const percentage = urlParams.get('percentage');
+            let resto = urlParams.get('resto');
             
             const badgeEl = document.getElementById('percentageBadge');
             if (badgeEl) {
@@ -173,6 +174,9 @@
                 if (activeAccountStr) {
                     try {
                         const activeAccount = JSON.parse(activeAccountStr);
+                        if (!resto) {
+                            resto = activeAccount.storeUrlId || (activeAccount.storeName ? activeAccount.storeName.toLowerCase().replace(/[^a-z0-9_-]/g, '') : null);
+                        }
                         if (activeAccount.isCustom) {
                             if (activeAccount.username) headers['x-olsera-username'] = activeAccount.username;
                             if (activeAccount.password) headers['x-olsera-password'] = activeAccount.password;
@@ -182,8 +186,12 @@
                     } catch(e) {}
                 }
 
+                if (!resto) resto = 'depottanjungapi';
 
-                const endpoint = percentage ? '/api/public?percentage=' + encodeURIComponent(percentage) : '/api/public';
+                let endpoint = `/api/public/${encodeURIComponent(resto)}`;
+                if (percentage) {
+                    endpoint += `?percentage=${encodeURIComponent(percentage)}`;
+                }
                 const res = await fetch(endpoint, { headers });
                 const json = await res.json();
 
