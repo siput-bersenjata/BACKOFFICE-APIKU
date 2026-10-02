@@ -160,9 +160,12 @@
 
         async function init() {
             const urlParams = new URLSearchParams(window.location.search);
-            const percentage = urlParams.get('percentage') || '50';
+            const percentage = urlParams.get('percentage');
             
-            document.getElementById('percentageBadge').innerText = percentage + '%';
+            const badgeEl = document.getElementById('percentageBadge');
+            if (badgeEl) {
+                badgeEl.innerText = percentage ? percentage + '%' : 'Filter Database';
+            }
 
             try {
                 const headers = {};
@@ -180,7 +183,8 @@
                 }
 
 
-                const res = await fetch('/api/public?percentage=' + percentage, { headers });
+                const endpoint = percentage ? '/api/public?percentage=' + encodeURIComponent(percentage) : '/api/public';
+                const res = await fetch(endpoint, { headers });
                 const json = await res.json();
 
                 if (json.status === 'success') {

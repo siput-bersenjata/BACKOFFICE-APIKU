@@ -1025,10 +1025,34 @@ function switchView(viewName) {
     initLucide();
 }
 
+let autoSavePercentageTimeout = null;
+
+/**
+ * Auto-save slider percentage to database config (debounced)
+ */
+function triggerAutoSavePercentage(percent) {
+    if (autoSavePercentageTimeout) clearTimeout(autoSavePercentageTimeout);
+    autoSavePercentageTimeout = setTimeout(async () => {
+        try {
+            await fetch('/api/database', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'save_config',
+                    percentage: percent
+                })
+            });
+            console.log('[Config] Auto-saved percentage to database:', percent);
+        } catch (e) {
+            console.warn('[Config] Auto-save error:', e.message);
+        }
+    }, 500);
+}
+
 /**
  * Update slider value and trigger live simulation recalculation
  */
-function updateSliderUI(val) {
+function updateSliderUI(val, shouldSave = true) {
     currentSliderPercentage = Math.max(1, Math.min(100, Number(val) || 50));
     const slider = document.getElementById('percentageSlider');
     if (slider) slider.value = currentSliderPercentage;
@@ -1036,11 +1060,14 @@ function updateSliderUI(val) {
     if (txt) txt.innerText = `${currentSliderPercentage}%`;
     calculateLiveSimulation();
     updatePublicApiUrl();
+    if (shouldSave) {
+        triggerAutoSavePercentage(currentSliderPercentage);
+    }
 }
 
 // Preset button handler exposed to window for inline onclicks
 window.setSliderPreset = function(val) {
-    updateSliderUI(val);
+    updateSliderUI(val, true);
 };
 
 /**
@@ -1146,27 +1173,28 @@ function calculateLiveSimulation() {
 
 /**
  * Update Public API URL displayed on page
+ * Always uses the fixed endpoint /api/public without query parameters
  */
 function updatePublicApiUrl() {
     const origin = window.location.origin;
-    const url = `${origin}/api/public?percentage=${currentSliderPercentage}`;
+    const url = `${origin}/api/public`;
     const textEl = document.getElementById('publicApiUrlText');
     const openBtn = document.getElementById('openApiUrlBtn');
     const previewBtn = document.getElementById('openPreviewPageBtn');
     if (textEl) textEl.innerText = url;
     if (openBtn) openBtn.href = url;
-    if (previewBtn) previewBtn.href = `/preview.html?percentage=${currentSliderPercentage}`;
+    if (previewBtn) previewBtn.href = `/preview.html`;
 }
 
 /**
- * Setup Copy URL to clipboard button
+ * Setup Copy URL to clipboard button (always copies the clean fixed endpoint)
  */
 function setupCopyUrlButton() {
     const copyBtn = document.getElementById('copyApiUrlBtn');
     if (copyBtn) {
         copyBtn.addEventListener('click', () => {
             const origin = window.location.origin;
-            const url = `${origin}/api/public?percentage=${currentSliderPercentage}`;
+            const url = `${origin}/api/public`;
             navigator.clipboard.writeText(url).then(() => {
                 const txt = document.getElementById('copyBtnText');
                 if (txt) {
@@ -1306,7 +1334,7 @@ async function fetchDatabaseSnapshots() {
 
         if (json.config && json.config.percentage && !window._hasLoadedConfig) {
             window._hasLoadedConfig = true;
-            updateSliderUI(json.config.percentage);
+            updateSliderUI(json.config.percentage, false);
         }
 
         publicDbSnapshots = json.snapshots || [];
