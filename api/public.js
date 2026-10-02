@@ -124,11 +124,9 @@ module.exports = async (req, res) => {
     res.status(200).json({
       status: 'success',
       api_name: 'Olsera POS Public Transaction API',
-      policy: 'Data khusus hari ini saja, difilter berdasarkan rasio persentase yang dikonfigurasi.',
       timestamp: new Date().toISOString(),
       filter: {
         date: todayStr,
-        percentage_applied: `${percentage}%`,
         total_real_transactions: totalReal,
         filtered_transactions_count: filtered.length,
         real_revenue: realRevenue,
