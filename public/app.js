@@ -57,8 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initCharts();
     setupEventListeners();
     updateAccountUI();
-    updatePublicApiUrl();
-    calculateLiveSimulation();
+    fetchOutletsList();
     fetchDashboardData();
     setupAutoRefresh();
 
@@ -373,8 +372,17 @@ function setupEventListeners() {
     const navChartsBtn = document.getElementById('navChartsBtn');
     if (navChartsBtn) navChartsBtn.addEventListener('click', () => switchView('charts'));
 
-    const navPublicApiBtn = document.getElementById('navPublicApiBtn');
-    if (navPublicApiBtn) navPublicApiBtn.addEventListener('click', () => switchView('publicApi'));
+    const navOutletsBtn = document.getElementById('navOutletsBtn');
+    if (navOutletsBtn) navOutletsBtn.addEventListener('click', () => switchView('outlets'));
+
+    const refreshOutletsBtn = document.getElementById('refreshOutletsBtn');
+    if (refreshOutletsBtn) refreshOutletsBtn.addEventListener('click', fetchOutletsList);
+
+    const addOutletBtn = document.getElementById('addOutletBtn');
+    if (addOutletBtn) addOutletBtn.addEventListener('click', () => {
+        const modal = document.getElementById('accountModal');
+        if (modal) modal.classList.remove('hidden');
+    });
 
     // Public API Slider
     const percentageSlider = document.getElementById('percentageSlider');
@@ -1001,15 +1009,15 @@ let publicDbSnapshots = [];
 let selectedSnapshotIndex = 0;
 
 /**
- * Switch between Main Realtime Dashboard and Public API / Database View
+ * Switch between Main Realtime Dashboard and Outlets List View
  */
 function switchView(viewName) {
     const mainView = document.getElementById('mainDashboardView');
-    const publicView = document.getElementById('publicApiView');
+    const outletsView = document.getElementById('outletsView');
     const navDash = document.getElementById('navDashboardBtn');
     const navTx = document.getElementById('navTransactionsBtn');
     const navCharts = document.getElementById('navChartsBtn');
-    const navPublic = document.getElementById('navPublicApiBtn');
+    const navOutlets = document.getElementById('navOutletsBtn');
 
     const defaultNavClass = 'w-full flex items-center gap-3 px-3 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl font-medium transition-colors text-left';
     const activeNavClass = 'w-full flex items-center gap-3 px-3 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-medium transition-colors text-left';
@@ -1017,17 +1025,15 @@ function switchView(viewName) {
     if (navDash) navDash.className = defaultNavClass;
     if (navTx) navTx.className = defaultNavClass;
     if (navCharts) navCharts.className = defaultNavClass;
-    if (navPublic) navPublic.className = defaultNavClass + ' group';
+    if (navOutlets) navOutlets.className = defaultNavClass + ' group';
 
-    if (viewName === 'publicApi') {
+    if (viewName === 'outlets') {
         if (mainView) mainView.classList.add('hidden');
-        if (publicView) publicView.classList.remove('hidden');
-        if (navPublic) navPublic.className = activeNavClass + ' group';
-        updatePublicApiUrl();
-        calculateLiveSimulation();
-        fetchDatabaseSnapshots();
+        if (outletsView) outletsView.classList.remove('hidden');
+        if (navOutlets) navOutlets.className = activeNavClass + ' group';
+        fetchOutletsList();
     } else {
-        if (publicView) publicView.classList.add('hidden');
+        if (outletsView) outletsView.classList.add('hidden');
         if (mainView) mainView.classList.remove('hidden');
 
         if (viewName === 'dashboard' && navDash) {
@@ -1052,8 +1058,102 @@ function switchView(viewName) {
         sidebar.classList.remove('flex');
         if (mobileBackdrop) mobileBackdrop.classList.add('hidden');
     }
+}
 
-    initLucide();
+/**
+ * Fetch and render registered outlets list
+ */
+async function fetchOutletsList() {
+    const grid = document.getElementById('outletsGrid');
+    const badge = document.getElementById('navOutletsCountBadge');
+
+    try {
+        const res = await fetch('/api/database?action=list_outlets');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const outlets = data.outlets || [];
+
+        if (badge) badge.textContent = `${outlets.length} Outlet`;
+
+        if (grid && outlets.length > 0) {
+            grid.innerHTML = outlets.map(o => {
+                const icon = o.slug.includes('cafe') || o.slug.includes('coffee') ? 'coffee' : 'utensils';
+                const bgIcon = o.slug.includes('cafe') ? 'bg-purple-50 text-purple-600' : 'bg-amber-50 text-amber-600';
+                const origin = window.location.origin || 'https://backoffice-apiku.vercel.app';
+                const fullSubLink = `${origin}${o.sub_link}`;
+                const fullApiUrl = `${origin}${o.api_endpoint}`;
+
+                return `
+                    <div class="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-5">
+                        <div>
+                            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl ${bgIcon} flex items-center justify-center font-bold">
+                                        <i data-lucide="${icon}" class="w-5 h-5"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-slate-900 text-base">${o.name}</h3>
+                                        <p class="text-xs text-slate-400">Akun: ${o.username || '-'}</p>
+                                    </div>
+                                </div>
+                                <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-live"></span>
+                                    ${o.status || 'Aktif'}
+                                </span>
+                            </div>
+
+                            <!-- Sub-Link Box -->
+                            <div class="mt-4 bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1.5">
+                                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Sub-Link Dashboard Outlet:</span>
+                                <div class="flex items-center justify-between gap-2">
+                                    <a href="${o.sub_link}" class="text-xs font-mono font-bold text-indigo-600 hover:text-indigo-800 truncate select-all underline">
+                                        ${o.sub_link}
+                                    </a>
+                                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-semibold">Sub-Link</span>
+                                </div>
+                            </div>
+
+                            <!-- Public API Endpoint Box -->
+                            <div class="mt-3 bg-slate-900 p-3.5 rounded-xl text-slate-100 space-y-2">
+                                <div class="flex items-center justify-between text-[11px]">
+                                    <span class="text-slate-400 font-mono">Endpoint API Publik:</span>
+                                    <span class="text-emerald-400 font-mono text-[10px]">GET ${o.api_endpoint}</span>
+                                </div>
+                                <div class="font-mono text-xs text-emerald-400 truncate select-all bg-slate-950 p-2 rounded border border-slate-800">
+                                    ${fullApiUrl}
+                                </div>
+                            </div>
+
+                            <!-- Ratio & Info -->
+                            <div class="mt-3 flex items-center justify-between text-xs text-slate-600 px-1">
+                                <span>Filter Database:</span>
+                                <span class="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">${o.percentage}% Default</span>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="pt-2 border-t border-slate-100 flex items-center gap-2">
+                            <a href="${o.sub_link}" class="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-indigo-200 flex items-center justify-center gap-1.5 active:scale-95">
+                                <i data-lucide="external-link" class="w-4 h-4"></i>
+                                <span>Buka Dashboard Outlet</span>
+                            </a>
+                            <a href="${o.preview_endpoint}" target="_blank" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1" title="Lihat Tabel Preview">
+                                <i data-lucide="table" class="w-3.5 h-3.5"></i>
+                                <span>Tabel</span>
+                            </a>
+                            <a href="${o.api_endpoint}" target="_blank" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1" title="Buka JSON Publik">
+                                <i data-lucide="code" class="w-3.5 h-3.5"></i>
+                                <span>JSON</span>
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            initLucide();
+        }
+    } catch (e) {
+        console.warn('[Outlets List] Error loading outlets:', e);
+    }
 }
 
 let autoSavePercentageTimeout = null;

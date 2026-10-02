@@ -1,5 +1,16 @@
 const { getSalesDetails, formatDate, extractAuthContext, resequenceOrderNumbers } = require('../lib/olsera');
-const { getPublicConfig, savePublicConfig, saveSnapshot, getSnapshots, cleanupOldSnapshots, getRetentionStatus } = require('../lib/database');
+const { 
+  getPublicConfig, 
+  savePublicConfig, 
+  saveSnapshot, 
+  getSnapshots, 
+  cleanupOldSnapshots, 
+  getRetentionStatus,
+  normalizeStoreSlug,
+  getRegisteredOutlets,
+  getOutletConfig,
+  saveOutletConfig
+} = require('../lib/database');
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -25,18 +36,39 @@ module.exports = async (req, res) => {
     });
   }
 
+  const requestedStore = body?.store || req.query?.store || null;
+  const storeSlug = requestedStore ? normalizeStoreSlug(requestedStore) : null;
+
   if (req.method === 'POST') {
     const action = body?.action || req.query?.action || 'sync_now';
+
+    if (action === 'list_outlets') {
+      const outlets = await getRegisteredOutlets();
+      return res.status(200).json({
+        status: 'success',
+        outlets
+      });
+    }
 
     if (action === 'save_config') {
       const percentage = body?.percentage !== undefined ? Number(body.percentage) : undefined;
       const monthly_retention = body?.monthly_retention !== undefined ? Boolean(body.monthly_retention) : undefined;
       const grace_period_days = body?.grace_period_days !== undefined ? Number(body.grace_period_days) : undefined;
 
+      if (storeSlug) {
+        const savedOutlet = await saveOutletConfig(storeSlug, { percentage, monthly_retention, grace_period_days });
+        return res.status(200).json({
+          status: 'success',
+          store: storeSlug,
+          message: `Konfigurasi database untuk ${savedOutlet.store_name} berhasil disimpan.`,
+          config: savedOutlet
+        });
+      }
+
       const savedConfig = await savePublicConfig({ percentage, monthly_retention, grace_period_days });
       return res.status(200).json({
         status: 'success',
-        message: `Konfigurasi database berhasil disimpan.`,
+        message: `Konfigurasi database global berhasil disimpan.`,
         config: savedConfig
       });
     }
@@ -44,6 +76,17 @@ module.exports = async (req, res) => {
     if (action === 'save_retention_config') {
       const monthly_retention = body?.monthly_retention !== undefined ? Boolean(body.monthly_retention) : true;
       const grace_period_days = body?.grace_period_days !== undefined ? Math.max(0, Math.min(10, Number(body.grace_period_days))) : 2;
+
+      if (storeSlug) {
+        const savedOutlet = await saveOutletConfig(storeSlug, { monthly_retention, grace_period_days });
+        return res.status(200).json({
+          status: 'success',
+          store: storeSlug,
+          message: `Pengaturan retensi bulanan untuk ${savedOutlet.store_name} berhasil disimpan (Jeda: ${savedOutlet.grace_period_days} hari).`,
+          config: savedOutlet,
+          retention: savedOutlet.retention
+        });
+      }
 
       const savedConfig = await savePublicConfig({ monthly_retention, grace_period_days });
       const retentionStatus = getRetentionStatus(new Date(), savedConfig.grace_period_days);
@@ -61,12 +104,13 @@ module.exports = async (req, res) => {
         const force = body?.force === true;
         const result = await cleanupOldSnapshots({ force });
         const [config, snapshots] = await Promise.all([
-          getPublicConfig(),
-          getSnapshots(30)
+          storeSlug ? getOutletConfig(storeSlug) : getPublicConfig(),
+          getSnapshots(30, storeSlug)
         ]);
 
         return res.status(200).json({
           status: 'success',
+          store: storeSlug || 'all',
           message: force
             ? `Pembersihan paksa selesai: ${result.purged_count} snapshot bulan lalu telah dihapus.`
             : (result.purged_count > 0 
@@ -111,21 +155,42 @@ module.exports = async (req, res) => {
     if (action === 'sync_now') {
       try {
         const todayStr = body?.date || formatDate(new Date());
-        const config = await getPublicConfig();
-        const percentage = body?.percentage ? Number(body.percentage) : config.percentage;
+        let effectivePercentage = 50;
+        let storeUrlId = 'depotanjungapi';
+        let storeName = 'Depot TanjungApi';
 
         let authContext = extractAuthContext(req);
-        if (!authContext.username && !authContext.token && config.active_account) {
-          authContext = {
-            username: config.active_account.username,
-            password: config.active_account.password,
-            token: config.active_account.token,
-            storeUrlId: config.active_account.store_url_id || config.active_account.storeUrlId
-          };
-        }
 
-        const storeUrlId = authContext.storeUrlId || config.active_account?.store_url_id || 'depottanjungapi';
-        const storeName = config.active_account?.store_name || (storeUrlId === 'depottanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
+        if (storeSlug) {
+          const outletConf = await getOutletConfig(storeSlug);
+          effectivePercentage = body?.percentage ? Number(body.percentage) : outletConf.percentage;
+          storeUrlId = outletConf.store_url_id;
+          storeName = outletConf.store_name;
+
+          if (!authContext.username && !authContext.token) {
+            authContext = {
+              username: outletConf.username,
+              password: outletConf.password,
+              token: outletConf.token,
+              storeUrlId: outletConf.store_url_id
+            };
+          }
+        } else {
+          const config = await getPublicConfig();
+          effectivePercentage = body?.percentage ? Number(body.percentage) : config.percentage;
+
+          if (!authContext.username && !authContext.token && config.active_account) {
+            authContext = {
+              username: config.active_account.username,
+              password: config.active_account.password,
+              token: config.active_account.token,
+              storeUrlId: config.active_account.store_url_id || config.active_account.storeUrlId
+            };
+          }
+
+          storeUrlId = authContext.storeUrlId || config.active_account?.store_url_id || 'depotanjungapi';
+          storeName = config.active_account?.store_name || (storeUrlId === 'depotanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
+        }
 
         let effectiveDate = todayStr;
         let allTx = [];
@@ -162,7 +227,7 @@ module.exports = async (req, res) => {
         }
 
         const totalReal = allTx.length;
-        const targetCount = Math.max(1, Math.min(totalReal, Math.round(totalReal * (percentage / 100))));
+        const targetCount = Math.max(1, Math.min(totalReal, Math.round(totalReal * (effectivePercentage / 100))));
 
         let filtered = [];
         if (targetCount >= totalReal) {
@@ -201,7 +266,7 @@ module.exports = async (req, res) => {
           date: effectiveDate,
           store_url_id: storeUrlId,
           store_name: storeName,
-          percentage,
+          percentage: effectivePercentage,
           total_real_transactions: totalReal,
           saved_count: filtered.length,
           total_revenue: filteredRevenue,
@@ -211,7 +276,8 @@ module.exports = async (req, res) => {
 
         return res.status(200).json({
           status: 'success',
-          message: 'Data filter transaksi hari ini berhasil disimpan ke Cloud Database!',
+          store: storeUrlId,
+          message: `Data filter transaksi ${storeName} berhasil disimpan ke Cloud Database!`,
           snapshot: newSnapshot
         });
       } catch (err) {
@@ -224,11 +290,44 @@ module.exports = async (req, res) => {
     }
   }
 
-  // GET: Return config, retention status, and snapshots
+  // GET: Return config, retention status, and snapshots (filtered by store if requested)
   try {
-    const [config, snapshots] = await Promise.all([
+    if (req.query?.action === 'list_outlets') {
+      const outlets = await getRegisteredOutlets();
+      return res.status(200).json({
+        status: 'success',
+        outlets
+      });
+    }
+
+    if (storeSlug) {
+      const [outletConfig, snapshots] = await Promise.all([
+        getOutletConfig(storeSlug),
+        getSnapshots(30, storeSlug)
+      ]);
+
+      return res.status(200).json({
+        status: 'success',
+        store: storeSlug,
+        database: {
+          engine: 'Cloud Firestore (Firebase Project: salshya)',
+          collection: 'olsera_filtered_snapshots',
+          outlet_name: outletConfig.store_name,
+          outlet_slug: outletConfig.store_url_id,
+          sync_schedule: 'Setiap 5 Jam Sekali (Otomatis)',
+          retention_policy: `Siklus Bulanan (Jeda ${outletConfig.grace_period_days} Hari)`
+        },
+        config: outletConfig,
+        retention: outletConfig.retention,
+        total_snapshots: snapshots.length,
+        snapshots
+      });
+    }
+
+    const [config, snapshots, outlets] = await Promise.all([
       getPublicConfig(),
-      getSnapshots(30)
+      getSnapshots(30),
+      getRegisteredOutlets()
     ]);
 
     const retention = getRetentionStatus(new Date(), Number(config.grace_period_days) || 2);
@@ -243,6 +342,7 @@ module.exports = async (req, res) => {
       },
       config,
       retention,
+      outlets,
       total_snapshots: snapshots.length,
       snapshots
     });

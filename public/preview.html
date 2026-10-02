@@ -186,7 +186,9 @@
                     } catch(e) {}
                 }
 
-                if (!resto) resto = 'depottanjungapi';
+                if (!resto) resto = 'depotanjungapi';
+                if (resto === 'depottanjungapi') resto = 'depotanjungapi';
+                if (resto === 'naikiresto') resto = 'naikicafe';
 
                 let endpoint = `/api/public/${encodeURIComponent(resto)}`;
                 if (percentage) {

@@ -1,4 +1,5 @@
 const { getFullDashboard, extractAuthContext } = require('../lib/olsera');
+const { getOutletConfig, normalizeStoreSlug } = require('../lib/database');
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -15,8 +16,25 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { date } = req.query || {};
-    const authContext = extractAuthContext(req);
+    const { date, store } = req.query || {};
+    let authContext = extractAuthContext(req);
+
+    if (!authContext.username && !authContext.token && store) {
+      try {
+        const outlet = await getOutletConfig(store);
+        if (outlet) {
+          authContext = {
+            username: outlet.username,
+            password: outlet.password,
+            storeUrlId: outlet.store_url_id,
+            token: outlet.token || null
+          };
+        }
+      } catch (err) {
+        console.warn('[Dashboard API] Outlet config resolve warning:', err.message);
+      }
+    }
+
     const dashboardData = await getFullDashboard(date, authContext);
     res.status(200).json(dashboardData);
   } catch (error) {

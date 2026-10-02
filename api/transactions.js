@@ -1,4 +1,5 @@
 const { getSalesDetails, formatDate, extractAuthContext } = require('../lib/olsera');
+const { getOutletConfig, normalizeStoreSlug } = require('../lib/database');
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -20,7 +21,25 @@ module.exports = async (req, res) => {
     const endDate = req.query.end_date || today;
     const page = parseInt(req.query.page, 10) || 1;
     const perPage = parseInt(req.query.per_page, 10) || 50;
-    const authContext = extractAuthContext(req);
+    const store = req.query.store;
+
+    let authContext = extractAuthContext(req);
+
+    if (!authContext.username && !authContext.token && store) {
+      try {
+        const outlet = await getOutletConfig(store);
+        if (outlet) {
+          authContext = {
+            username: outlet.username,
+            password: outlet.password,
+            storeUrlId: outlet.store_url_id,
+            token: outlet.token || null
+          };
+        }
+      } catch (err) {
+        console.warn('[Transactions API] Outlet config resolve warning:', err.message);
+      }
+    }
 
     const data = await getSalesDetails(startDate, endDate, page, perPage, authContext);
     res.status(200).json(data);

@@ -68,6 +68,20 @@ async function handleRequest(req, res) {
     return databaseHandler(req, res);
   }
 
+  // Handle outlet sub-link routes (/outlet/naikicafe, /outlet/depotanjungapi, etc.)
+  if (pathname.startsWith('/outlet/') || pathname === '/depotanjungapi' || pathname === '/depottanjungapi' || pathname === '/naikicafe' || pathname === '/naikiresto') {
+    const outletFile = path.join(PUBLIC_DIR, 'outlet.html');
+    fs.readFile(outletFile, (readErr, content) => {
+      if (readErr) {
+        res.statusCode = 500;
+        return res.end(`Error reading outlet file: ${readErr.code}`);
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(content);
+    });
+    return;
+  }
+
   // Static files in public/
   let filePath = path.join(PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname);
 

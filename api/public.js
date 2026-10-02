@@ -33,7 +33,9 @@ module.exports = async (req, res) => {
 
     // 2. Determine percentage: Query param or saved database config
     const config = await getPublicConfig();
-    let percentage = config.percentage || 50;
+    let percentage = (config.accounts && restoSlug && config.accounts[restoSlug]?.percentage !== undefined)
+      ? Number(config.accounts[restoSlug].percentage)
+      : (config.percentage || 50);
 
     if (req.query.percentage) {
       const parsed = parseInt(req.query.percentage, 10);
@@ -116,11 +118,13 @@ module.exports = async (req, res) => {
     // Fallback 2: check database snapshot for this store
     if (allTx.length === 0) {
       try {
-        const snaps = await getSnapshots(20);
-        const match = snaps.find(s => !s.store_url_id || s.store_url_id === effectiveStore || s.store_url_id === 'depotanjungapi');
-        if (match && match.transactions && match.transactions.length > 0) {
-          allTx = match.transactions;
-          if (match.date) effectiveDate = match.date;
+        const snaps = await getSnapshots(20, effectiveStore);
+        if (snaps && snaps.length > 0) {
+          const match = snaps[0];
+          if (match && match.transactions && match.transactions.length > 0) {
+            allTx = match.transactions;
+            if (match.date) effectiveDate = match.date;
+          }
         }
       } catch (dbErr) {
         console.warn('[Public API] Snapshot fallback warning:', dbErr.message);
@@ -184,7 +188,9 @@ module.exports = async (req, res) => {
     });
 
     // 6. Check if database snapshot is due or if first snapshot
-    const storeName = config.active_account?.store_name || (effectiveStore === 'depotanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
+    const storeName = (config.accounts && config.accounts[effectiveStore]?.store_name)
+      || config.active_account?.store_name
+      || (effectiveStore === 'depotanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
     if (await shouldRun5HourSync() || filtered.length > 0) {
       saveSnapshot({
         date: effectiveDate,
