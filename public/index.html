@@ -496,12 +496,18 @@
 
                 <!-- Public Endpoint Box -->
                 <div class="bg-slate-900 rounded-xl p-4 text-slate-100 space-y-3">
-                    <div class="flex items-center justify-between text-xs">
+                    <div class="flex items-center justify-between text-xs flex-wrap gap-2">
                         <span class="text-slate-400 font-mono flex items-center gap-1.5">
                             <i data-lucide="globe" class="w-3.5 h-3.5 text-indigo-400"></i>
                             Tautan Endpoint API Publik (Bisa Diakses Siapa Saja Tanpa Login)
                         </span>
-                        <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[11px]">GET /api/public</span>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[11px] flex items-center gap-1">
+                                <i data-lucide="store" class="w-3 h-3"></i>
+                                <span id="publicApiRestoBadge">Naiki cafe</span>
+                            </span>
+                            <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[11px]">GET /api/public</span>
+                        </div>
                     </div>
                     <div class="flex items-center gap-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 font-mono text-xs overflow-x-auto">
                         <span id="publicApiUrlText" class="text-emerald-400 select-all truncate">https://backoffice-apiku.vercel.app/api/public</span>

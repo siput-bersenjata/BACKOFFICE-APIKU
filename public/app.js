@@ -47,6 +47,36 @@ function saveAccount(acc) {
         localStorage.removeItem(STORAGE_KEY);
     }
     updateAccountUI();
+    syncAccountToDatabase(acc);
+}
+
+/**
+ * Sync active account & restaurant outlet to database config
+ * so that /api/public returns data and name for the active user's setting
+ */
+async function syncAccountToDatabase(acc) {
+    try {
+        const storeName = acc.storeName || (dashboardData?.store?.name) || 'Naiki cafe';
+        const storeUrlId = acc.storeUrlId || 'naikicafe';
+        await fetch('/api/database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'save_account_config',
+                store_name: storeName,
+                store_url_id: storeUrlId,
+                username: acc.isCustom ? acc.username : null,
+                password: acc.isCustom ? acc.password : null,
+                token: acc.isCustom ? acc.token : null,
+                is_custom: Boolean(acc.isCustom)
+            })
+        });
+        console.log('[Account] Synced active restaurant to database:', storeName, storeUrlId);
+        const pubRestoBadge = document.getElementById('publicApiRestoBadge');
+        if (pubRestoBadge) pubRestoBadge.innerText = storeName;
+    } catch (e) {
+        console.warn('[Account] Failed to sync account to database:', e.message);
+    }
 }
 
 // Initialize when DOM is ready
@@ -344,6 +374,10 @@ function setupEventListeners() {
     outletSelect.addEventListener('change', (e) => {
         if (e.target.value) {
             activeAccount.storeUrlId = e.target.value;
+            const matchedStore = (activeAccount.stores || []).find(s => s.url_id === e.target.value);
+            if (matchedStore) {
+                activeAccount.storeName = matchedStore.name;
+            }
             saveAccount(activeAccount);
             closeAccountModal();
             fetchDashboardData();
@@ -526,6 +560,18 @@ function applyDashboardData(data) {
         document.getElementById('outletBadge').innerText = name;
         document.getElementById('headerStoreName').innerText = name;
         document.getElementById('userRoleBadge').innerText = data.store.role || 'Perpajakan (PJ)';
+
+        const pubRestoBadge = document.getElementById('publicApiRestoBadge');
+        if (pubRestoBadge) pubRestoBadge.innerText = name;
+
+        if (activeAccount.storeName !== name || (data.store.url_id && activeAccount.storeUrlId !== data.store.url_id)) {
+            activeAccount.storeName = name;
+            if (data.store.url_id) activeAccount.storeUrlId = data.store.url_id;
+            if (activeAccount.isCustom) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(activeAccount));
+            }
+            syncAccountToDatabase(activeAccount);
+        }
     }
 
     // Account Info
@@ -1342,9 +1388,15 @@ async function fetchDatabaseSnapshots() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
-        if (json.config && json.config.percentage && !window._hasLoadedConfig) {
-            window._hasLoadedConfig = true;
-            updateSliderUI(json.config.percentage, false);
+        if (json.config) {
+            if (json.config.percentage && !window._hasLoadedConfig) {
+                window._hasLoadedConfig = true;
+                updateSliderUI(json.config.percentage, false);
+            }
+            if (json.config.store_name) {
+                const pubRestoBadge = document.getElementById('publicApiRestoBadge');
+                if (pubRestoBadge) pubRestoBadge.innerText = json.config.store_name;
+            }
         }
 
         if (json.retention) {

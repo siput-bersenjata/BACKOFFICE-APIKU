@@ -32,11 +32,51 @@ module.exports = async (req, res) => {
       const percentage = body?.percentage !== undefined ? Number(body.percentage) : undefined;
       const monthly_retention = body?.monthly_retention !== undefined ? Boolean(body.monthly_retention) : undefined;
       const grace_period_days = body?.grace_period_days !== undefined ? Number(body.grace_period_days) : undefined;
+      const store_name = body?.store_name;
+      const store_url_id = body?.store_url_id;
+      const username = body?.username;
+      const password = body?.password;
+      const token = body?.token;
+      const is_custom = body?.is_custom !== undefined ? Boolean(body.is_custom) : undefined;
 
-      const savedConfig = await savePublicConfig({ percentage, monthly_retention, grace_period_days });
+      const savedConfig = await savePublicConfig({
+        percentage,
+        monthly_retention,
+        grace_period_days,
+        store_name,
+        store_url_id,
+        username,
+        password,
+        token,
+        is_custom
+      });
       return res.status(200).json({
         status: 'success',
         message: `Konfigurasi database berhasil disimpan.`,
+        config: savedConfig
+      });
+    }
+
+    if (action === 'save_account_config') {
+      const store_name = body?.store_name;
+      const store_url_id = body?.store_url_id;
+      const username = body?.username;
+      const password = body?.password;
+      const token = body?.token;
+      const is_custom = body?.is_custom !== undefined ? Boolean(body.is_custom) : undefined;
+
+      const savedConfig = await savePublicConfig({
+        store_name,
+        store_url_id,
+        username,
+        password,
+        token,
+        is_custom
+      });
+
+      return res.status(200).json({
+        status: 'success',
+        message: `Akun/resto ${savedConfig.store_name} berhasil disinkronkan ke API Publik.`,
         config: savedConfig
       });
     }
@@ -93,13 +133,21 @@ module.exports = async (req, res) => {
         const config = await getPublicConfig();
         const percentage = body?.percentage ? Number(body.percentage) : config.percentage;
 
-        const authContext = extractAuthContext(req);
-        const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
+        const headerAuth = extractAuthContext(req);
+        const effectiveAuth = {
+          token: headerAuth.token || config.token || null,
+          storeUrlId: body?.store_url_id || headerAuth.storeUrlId || config.store_url_id || 'naikicafe',
+          username: headerAuth.username || config.username || null,
+          password: headerAuth.password || config.password || null
+        };
+        const storeName = body?.store_name || config.store_name || 'Naiki cafe';
+
+        const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, effectiveAuth);
         let allTx = page1.data || [];
 
         if (page1.meta && page1.meta.last_page > 1) {
           try {
-            const page2 = await getSalesDetails(todayStr, todayStr, 2, 100, authContext);
+            const page2 = await getSalesDetails(todayStr, todayStr, 2, 100, effectiveAuth);
             if (page2.data) allTx = allTx.concat(page2.data);
           } catch (e) {}
         }
@@ -141,6 +189,7 @@ module.exports = async (req, res) => {
         });
 
         const newSnapshot = await saveSnapshot({
+          store_name: storeName,
           date: todayStr,
           percentage,
           total_real_transactions: totalReal,

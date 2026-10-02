@@ -43,6 +43,11 @@
             </div>
             <div class="flex items-center gap-4">
                 <div class="text-right hidden sm:block">
+                    <p class="text-[10px] font-semibold text-slate-400 uppercase">Outlet / Resto</p>
+                    <p id="previewRestoName" class="font-bold text-slate-800 text-sm">Naiki cafe</p>
+                </div>
+                <div class="h-8 w-px bg-slate-200 hidden sm:block"></div>
+                <div class="text-right hidden sm:block">
                     <p class="text-[10px] font-semibold text-slate-400 uppercase">Persentase Aktif</p>
                     <p id="percentageBadge" class="font-bold text-indigo-600 text-sm">--%</p>
                 </div>
@@ -191,6 +196,10 @@
                     const data = json.data || [];
                     const filterMeta = json.filter || {};
                     
+                    const restoName = json.restaurant_name || json.store_name || filterMeta.restaurant_name || 'Naiki cafe';
+                    const restoEl = document.getElementById('previewRestoName');
+                    if (restoEl) restoEl.innerText = restoName;
+
                     document.getElementById('totalRealData').innerText = (filterMeta.total_real_transactions || 0) + ' Transaksi';
                     document.getElementById('totalFilteredData').innerText = (filterMeta.filtered_transactions_count || data.length) + ' Transaksi';
                     
