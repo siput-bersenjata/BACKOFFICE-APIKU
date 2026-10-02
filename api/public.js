@@ -18,7 +18,7 @@ module.exports = async (req, res) => {
     // 1. Strict constraint: TODAY'S DATE (WIB) by default, or query param date if specified
     const todayStr = req.query?.date || formatDate(new Date());
 
-    // Extract resto / outlet name if accessed via /api/public/:resto (e.g. /api/public/depottanjungapi)
+    // Extract resto / outlet name if accessed via /api/public/:resto (e.g. /api/public/depotanjungapi)
     let restoSlug = req.query?.resto;
     if (!restoSlug && req.url) {
       const match = req.url.split('?')[0].match(/\/api\/public\/([^/?#]+)/);
@@ -28,6 +28,7 @@ module.exports = async (req, res) => {
     }
     if (restoSlug) {
       restoSlug = restoSlug.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (restoSlug === 'depottanjungapi') restoSlug = 'depotanjungapi';
     }
 
     // 2. Determine percentage: Query param or saved database config
@@ -63,10 +64,12 @@ module.exports = async (req, res) => {
       authContext.storeUrlId = restoSlug;
     }
 
-    const effectiveStore = restoSlug || authContext.storeUrlId || config.active_account?.store_url_id || 'depottanjungapi';
+    const effectiveStore = restoSlug || authContext.storeUrlId || config.active_account?.store_url_id || 'depotanjungapi';
 
     // 3. Fetch today's transactions (fetch up to 500 items for today across pages)
     let allTx = [];
+    let effectiveDate = todayStr;
+
     try {
       const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
       allTx = page1.data || [];
@@ -90,13 +93,34 @@ module.exports = async (req, res) => {
       }
     } catch (fetchErr) {
       console.warn('[Public API] Live fetch warning:', fetchErr.message);
-      // Fallback: check database snapshot for this store
+    }
+
+    // If today has 0 transactions and user did not specify an explicit date, fallback to yesterday (or recent active date)
+    if (allTx.length === 0 && !req.query?.date) {
       try {
-        const snaps = await getSnapshots(15);
-        const match = snaps.find(s => s.date === todayStr && (!s.store_url_id || s.store_url_id === effectiveStore))
-          || snaps.find(s => !s.store_url_id || s.store_url_id === effectiveStore);
-        if (match && match.transactions) {
+        const parts = todayStr.split('-');
+        const yestDate = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] - 1));
+        const yesterdayStr = yestDate.toISOString().split('T')[0];
+
+        const yestPage1 = await getSalesDetails(yesterdayStr, yesterdayStr, 1, 100, authContext);
+        if (yestPage1 && yestPage1.data && yestPage1.data.length > 0) {
+          allTx = yestPage1.data;
+          effectiveDate = yesterdayStr;
+          console.log(`[Public API] Fallback to recent date with transactions: ${yesterdayStr} (${allTx.length} tx)`);
+        }
+      } catch (yestErr) {
+        console.warn('[Public API] Yesterday fetch warning:', yestErr.message);
+      }
+    }
+
+    // Fallback 2: check database snapshot for this store
+    if (allTx.length === 0) {
+      try {
+        const snaps = await getSnapshots(20);
+        const match = snaps.find(s => !s.store_url_id || s.store_url_id === effectiveStore || s.store_url_id === 'depotanjungapi');
+        if (match && match.transactions && match.transactions.length > 0) {
           allTx = match.transactions;
+          if (match.date) effectiveDate = match.date;
         }
       } catch (dbErr) {
         console.warn('[Public API] Snapshot fallback warning:', dbErr.message);
@@ -159,11 +183,11 @@ module.exports = async (req, res) => {
       filteredTax += Number(tx.tax) || 0;
     });
 
-    // 6. Check if 5-hour database snapshot is due
-    if (await shouldRun5HourSync()) {
-      const storeName = config.active_account?.store_name || (effectiveStore === 'depottanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
+    // 6. Check if database snapshot is due or if first snapshot
+    const storeName = config.active_account?.store_name || (effectiveStore === 'depotanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
+    if (await shouldRun5HourSync() || filtered.length > 0) {
       saveSnapshot({
-        date: todayStr,
+        date: effectiveDate,
         store_url_id: effectiveStore,
         store_name: storeName,
         percentage,
@@ -172,7 +196,7 @@ module.exports = async (req, res) => {
         total_revenue: filteredRevenue,
         total_tax: filteredTax,
         transactions: filtered
-      }).catch(e => console.error('[Auto 5-Hour DB Sync Error]:', e.message));
+      }).catch(e => console.error('[Auto DB Sync Error]:', e.message));
     }
 
     res.status(200).json({
@@ -181,7 +205,7 @@ module.exports = async (req, res) => {
       store: effectiveStore,
       timestamp: new Date().toISOString(),
       filter: {
-        date: todayStr,
+        date: effectiveDate,
         total_real_transactions: totalReal,
         filtered_transactions_count: filtered.length,
         real_revenue: realRevenue,

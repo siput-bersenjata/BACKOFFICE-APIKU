@@ -127,14 +127,38 @@ module.exports = async (req, res) => {
         const storeUrlId = authContext.storeUrlId || config.active_account?.store_url_id || 'depottanjungapi';
         const storeName = config.active_account?.store_name || (storeUrlId === 'depottanjungapi' ? 'Depot TanjungApi' : 'Naiki cafe');
 
-        const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
-        let allTx = page1.data || [];
+        let effectiveDate = todayStr;
+        let allTx = [];
 
-        if (page1.meta && page1.meta.last_page > 1) {
+        try {
+          const page1 = await getSalesDetails(todayStr, todayStr, 1, 100, authContext);
+          allTx = page1.data || [];
+
+          if (page1.meta && page1.meta.last_page > 1) {
+            try {
+              const page2 = await getSalesDetails(todayStr, todayStr, 2, 100, authContext);
+              if (page2.data) allTx = allTx.concat(page2.data);
+            } catch (e) {}
+          }
+        } catch (fetchErr) {
+          console.warn('[Sync Now] Today fetch warning:', fetchErr.message);
+        }
+
+        // Fallback to yesterday if today has no sales yet and date was not explicitly forced
+        if (allTx.length === 0 && !body?.date) {
           try {
-            const page2 = await getSalesDetails(todayStr, todayStr, 2, 100, authContext);
-            if (page2.data) allTx = allTx.concat(page2.data);
-          } catch (e) {}
+            const parts = todayStr.split('-');
+            const yestDate = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] - 1));
+            const yesterdayStr = yestDate.toISOString().split('T')[0];
+
+            const yestPage1 = await getSalesDetails(yesterdayStr, yesterdayStr, 1, 100, authContext);
+            if (yestPage1 && yestPage1.data && yestPage1.data.length > 0) {
+              allTx = yestPage1.data;
+              effectiveDate = yesterdayStr;
+            }
+          } catch (yestErr) {
+            console.warn('[Sync Now] Yesterday fetch warning:', yestErr.message);
+          }
         }
 
         const totalReal = allTx.length;
@@ -174,7 +198,7 @@ module.exports = async (req, res) => {
         });
 
         const newSnapshot = await saveSnapshot({
-          date: todayStr,
+          date: effectiveDate,
           store_url_id: storeUrlId,
           store_name: storeName,
           percentage,
